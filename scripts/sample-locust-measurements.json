@@ -1,0 +1,26 @@
+{
+  "measurements": [
+    {
+      "componentId": "core",
+      "rps": 140,
+      "cpuCores": 6,
+      "replicas": 2,
+      "util": 0.7
+    },
+    {
+      "componentId": "haproxy",
+      "rps": 800,
+      "cpuCores": 0.4,
+      "replicas": 2,
+      "util": 0.5
+    },
+    {
+      "componentId": "dam",
+      "rps": 60,
+      "cpuCores": 2.5,
+      "replicas": 2,
+      "util": 0.65
+    }
+  ],
+  "note": "Replace with Locust steady-state RPS + kubectl top / AIOps CPU averages from your lab"
+}

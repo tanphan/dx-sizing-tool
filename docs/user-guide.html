@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HCL DX Sizing / Estimation Tool — User Guide</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 18mm 16mm;
+    }
+    :root {
+      --ink: #15202b;
+      --muted: #4a5a6a;
+      --line: #d7dee6;
+      --accent: #1a6fb5;
+      --ok: #1f8a5b;
+      --warn: #b7791f;
+      --danger: #c0392b;
+      --bg: #f7f9fb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      line-height: 1.45;
+      font-size: 10.5pt;
+      margin: 0;
+      padding: 0;
+    }
+    h1, h2, h3 { page-break-after: avoid; }
+    h1 {
+      font-size: 22pt;
+      margin: 0 0 6px;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 14pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 2px solid var(--accent);
+      color: var(--accent);
+    }
+    h3 {
+      font-size: 11.5pt;
+      margin: 14px 0 6px;
+    }
+    p { margin: 0 0 8px; }
+    .subtitle {
+      color: var(--muted);
+      font-size: 11pt;
+      margin-bottom: 14px;
+    }
+    .meta {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      font-size: 9.5pt;
+      color: var(--muted);
+      margin-bottom: 16px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: #eef5fb;
+      padding: 10px 12px;
+      margin: 12px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .callout.warn {
+      border-left-color: var(--warn);
+      background: #fff8ea;
+    }
+    .callout.danger {
+      border-left-color: var(--danger);
+      background: #fdf0ef;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 14px;
+      font-size: 9.5pt;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    code, .mono {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 9pt;
+      background: #eef2f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #15202b;
+      color: #e8eef5;
+      padding: 12px 14px;
+      border-radius: 6px;
+      font-size: 8.5pt;
+      line-height: 1.4;
+      overflow: hidden;
+      white-space: pre-wrap;
+    }
+    ul, ol { margin: 0 0 10px; padding-left: 18px; }
+    li { margin-bottom: 3px; }
+    .band {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .band.g { background: var(--ok); }
+    .band.a { background: var(--warn); }
+    .band.r { background: var(--danger); }
+    .toc a { color: var(--accent); text-decoration: none; }
+    .toc li { margin-bottom: 4px; }
+    .footer-note {
+      margin-top: 28px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      font-size: 8.5pt;
+      color: var(--muted);
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #fff;
+    }
+    .card h3 { margin-top: 0; }
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+<body>
+
+  <h1>HCL DX Sizing / Estimation Tool</h1>
+  <p class="subtitle">User Guide — Estimator, Simulator, Calibration &amp; Live Compare</p>
+  <div class="meta">
+    <div><strong>App path:</strong> <span class="mono">DXAutomation/dx-sizing-tool</span></div>
+    <div><strong>Run:</strong> <span class="mono">npm run dev</span> → http://127.0.0.1:5173/</div>
+    <div><strong>Profiles:</strong> dxcn-cf238 · compose-cf237</div>
+    <div><strong>Version:</strong> 0.1.0</div>
+  </div>
+
+  <div class="callout danger">
+    <strong>Disclaimer.</strong> This is an estimation aid for lab and planning use.
+    It is <em>not</em> an HCL official SCU, sizing guarantee, or license quote.
+    Calibrate capacity profiles on your own environment before production decisions.
+  </div>
+
+  <h2>1. Contents</h2>
+  <ol class="toc">
+    <li><a href="#overview">What this tool does</a></li>
+    <li><a href="#start">Start the app</a></li>
+    <li><a href="#layout">UI layout</a></li>
+    <li><a href="#product">DXCN vs DX Compose</a></li>
+    <li><a href="#inputs">Inputs (must-have &amp; advanced)</a></li>
+    <li><a href="#estimator">Estimator</a></li>
+    <li><a href="#simulator">Simulator</a></li>
+    <li><a href="#calibrate">Calibrate (Locust → profile)</a></li>
+    <li><a href="#live">Live vs estimate</a></li>
+    <li><a href="#exports">Exports</a></li>
+    <li><a href="#formulas">How the math works</a></li>
+    <li><a href="#example">Worked example</a></li>
+    <li><a href="#troubleshoot">Troubleshooting</a></li>
+  </ol>
+
+  <h2 id="overview">2. What this tool does</h2>
+  <p>
+    Given business/usage inputs (peak users, session length, search/DAM attach rates, etc.),
+    the tool produces two views from the <strong>same sizing engine</strong>:
+  </p>
+  <div class="two-col">
+    <div class="card">
+      <h3>Estimator</h3>
+      <p>BOM table: replicas, CPU, memory, storage, util, infra cost, license cost, AI tokens. Session panel + CSV/JSON/Helm export.</p>
+    </div>
+    <div class="card">
+      <h3>Simulator</h3>
+      <p>Topology graph with RPS on edges, util coloring, load slider (0.1×–5×), scenario presets, and fix actions (add replica / enable CDN).</p>
+    </div>
+  </div>
+  <p>
+    Switching product <strong>DXCN</strong> ↔ <strong>DX Compose</strong> swaps the component catalog
+    (Core vs webEngine; Remote Search only on DXCN) but keeps one math kernel so estimator and simulator never disagree.
+  </p>
+
+  <h2 id="start">3. Start the app</h2>
+  <pre>cd DXAutomation/dx-sizing-tool
+npm install
+npm run dev
+# open http://127.0.0.1:5173/
+
+npm test          # engine unit tests
+npm run build     # production bundle → dist/</pre>
+  <p>
+    Settings persist in browser <span class="mono">localStorage</span> key
+    <span class="mono">dx-sizing-tool-v1</span> (product, inputs, toggles, unit costs).
+  </p>
+
+  <h2 id="layout">4. UI layout</h2>
+  <table>
+    <tr><th>Area</th><th>Purpose</th></tr>
+    <tr><td>Top bar</td><td>Product switch (DXCN | Compose) and tabs (Estimator | Simulator | Calibrate | Live vs est)</td></tr>
+    <tr><td>Left sidebar</td><td>Scenario presets, must-have metrics, advanced accordion, optional component toggles, unit costs</td></tr>
+    <tr><td>Main panel</td><td>Active tab output (BOM, graph, calibration, live compare)</td></tr>
+  </table>
+
+  <h2 id="product">5. DXCN vs DX Compose</h2>
+  <table>
+    <tr><th></th><th>DXCN</th><th>DX Compose</th></tr>
+    <tr><td>Portal runtime</td><td>DX Core</td><td>Web Engine</td></tr>
+    <tr><td>Classic Remote Search</td><td>Optional</td><td>Not available (toggle forced off)</td></tr>
+    <tr><td>Search V2 (MW + OpenSearch + file processor)</td><td>Optional</td><td>Optional (common on labs)</td></tr>
+    <tr><td>Always-on</td><td colspan="2">HAProxy, logging sidecar, runtime controller, prereqs (job-only), external DB</td></tr>
+    <tr><td>Optionals (shared)</td><td colspan="2">OpenLDAP, External IdP, Content Composer, Ring API, DAM + image processor + persistence*, plugins, License Manager, People Service, IQ + MCP</td></tr>
+  </table>
+  <div class="callout">
+    <strong>Toggle forcing.</strong> Enabling DAM also enables Ring API, Image Processor, and persistence pool/node/metrics.
+    Content Composer forces Ring API. Any Search V2 piece enables the full trio. IQ Integrator forces MCP.
+  </div>
+  <div class="callout">
+    <strong>Auth topology.</strong> External IdP (OIDC/SAML) is <em>not</em> reached via HAProxy.
+    The browser redirects to the IdP; Core / webEngine call the IdP back-channel (token, JWKS, etc.).
+    OpenLDAP binds are also Core/webEngine → LDAP directly. ACS/callback traffic returns as normal portal RPS through HAProxy.
+  </div>
+
+  <div class="page-break"></div>
+
+  <h2 id="inputs">6. Inputs</h2>
+  <h3>6.1 Must-have</h3>
+  <table>
+    <tr><th>Input</th><th>Why it matters</th></tr>
+    <tr><td>Peak concurrent users</td><td>Session memory + derived RPS</td></tr>
+    <tr><td>DAU / MAU</td><td>Sessions/day, storage &amp; token projections</td></tr>
+    <tr><td>Peak RPS override</td><td>If &gt; 0, replaces derived front-door RPS</td></tr>
+    <tr><td>Req / session &amp; session duration</td><td><span class="mono">RPS ≈ U_peak × req / (T_min × 60)</span></td></tr>
+    <tr><td>% anonymous / authenticated</td><td>Login share → LDAP binds / IdP browser redirect + Core back-channel (not HAProxy→IdP)</td></tr>
+    <tr><td>% browse / author / form</td><td>WCM vs authoring vs write load</td></tr>
+    <tr><td>Search / DAM attach rates</td><td>Fan-out to search &amp; DAM paths</td></tr>
+    <tr><td>Assets / page</td><td>DAM RPS multiplier</td></tr>
+    <tr><td>AZ count</td><td>HA replica floor</td></tr>
+    <tr><td>Target p95 (ms)</td><td>Documented SLO (headroom context)</td></tr>
+    <tr><td>Cache hit ratio</td><td>Largest lever — reduces portal RPS after CDN</td></tr>
+  </table>
+
+  <h3>6.2 Advanced</h3>
+  <p>
+    Think time, searches/hit, peak authoring users, uploads/day &amp; avg MB, content items (index GB),
+    IQ attach / msgs / tokens in+out, growth CAGR, session footprint KB.
+  </p>
+
+  <h3>6.3 Scenario presets</h3>
+  <table>
+    <tr><th>Preset</th><th>Effect</th></tr>
+    <tr><td>Anonymous browse</td><td>Mostly anon portal traffic, light search/DAM</td></tr>
+    <tr><td>Login + WCM</td><td>Authenticated mix with form posts</td></tr>
+    <tr><td>Authoring</td><td>Raises author %, enables Content Composer + Ring</td></tr>
+    <tr><td>DAM heavy</td><td>High attach/assets/uploads; enables DAM stack</td></tr>
+    <tr><td>Search heavy</td><td>High search attach; Remote Search (DXCN) or Search V2 (Compose)</td></tr>
+    <tr><td>IQ chat</td><td>Enables IQ + MCP; token cost path</td></tr>
+  </table>
+
+  <h3>6.4 Unit costs</h3>
+  <p>
+    Editable $/vCPU-hour, $/GiB-hour, $/GiB storage-month, $/1K tokens, DX license $/node-month,
+    self-host LLM RAM GiB. Infra and license totals are kept separate on purpose.
+  </p>
+
+  <h2 id="estimator">7. Estimator</h2>
+  <p>Summary cards show front-door RPS, portal RPS, concurrent sessions, infra $, license $, AI tokens $, total $, and profile confidence.</p>
+  <ul>
+    <li><strong>Session math</strong> — concurrent sessions, sessions/day, footprint Mi, recommended timeout, sticky-session note for HAProxy.</li>
+    <li><strong>BOM table</strong> — per component: replicas, offered/capacity RPS, util, CPU, mem, storage, infra $, license $.</li>
+    <li><strong>Util colors</strong> —
+      <span class="band g"></span>green &lt;70% ·
+      <span class="band a"></span>amber 70–90% ·
+      <span class="band r"></span>red &gt;90%.
+    </li>
+    <li><strong>Warnings</strong> — default-profile confidence, CDN miss=0, bottlenecks, Compose Remote Search ignored, etc.</li>
+  </ul>
+
+  <h2 id="simulator">8. Simulator</h2>
+  <ol>
+    <li>Open the <strong>Simulator</strong> tab. Graph auto-layouts from the active product topology.</li>
+    <li>Edge labels show traffic class + RPS; edges animate when RPS &gt; 0.</li>
+    <li>Use the <strong>Load</strong> slider (0.1×–5×) to stress the design. At ~3× peak you should see amber/red on hot path nodes.</li>
+    <li>Click a node for util, replicas, cost, and notes.</li>
+    <li><strong>Add replica</strong> raises that node’s replica override and recomputes util/cost.</li>
+    <li><strong>Enable CDN</strong> restores cache-hit path (uncheck CDN to force miss-through).</li>
+    <li><strong>Reset fixes</strong> clears overrides and sets load back to 1×.</li>
+  </ol>
+  <div class="callout">
+    Simulator and Estimator call the same <span class="mono">runSizing()</span> function.
+    Node panel numbers match the BOM for identical inputs (except temporary replica overrides / CDN toggle in the sim).
+  </div>
+
+  <div class="page-break"></div>
+
+  <h2 id="calibrate">9. Calibrate (Locust → profile)</h2>
+  <p>Default profiles are conservative placeholders. To make numbers trustworthy on your lab:</p>
+  <ol>
+    <li>Run Locust scenarios; measure steady-state RPS and CPU per component (and replica count).</li>
+    <li>Open <strong>Calibrate</strong>. Paste JSON like:</li>
+  </ol>
+  <pre>{
+  "measurements": [
+    { "componentId": "core", "rps": 140, "cpuCores": 6, "replicas": 2, "util": 0.7 },
+    { "componentId": "haproxy", "rps": 800, "cpuCores": 0.4, "replicas": 2, "util": 0.5 }
+  ]
+}</pre>
+  <ol start="3">
+    <li>Click <strong>Apply calibration</strong>. A lab profile is registered (e.g. <span class="mono">dxcn-cf238-lab</span>) with <span class="mono">confidence: lab-calibrated</span>.</li>
+    <li>Optionally <strong>Export Locust scenario mix</strong> (browse/author/form/search/DAM/IQ weights) for AIOps alignment.</li>
+    <li>Sample file: <span class="mono">scripts/sample-locust-measurements.json</span>.</li>
+  </ol>
+  <p>
+    Patch formula (approx): <span class="mono">rpsPerReplica ≈ observed_rps / replicas / util</span>;
+    <span class="mono">cpuPerRps</span> derived from measured CPU above base.
+  </p>
+
+  <h2 id="live">10. Live vs estimate</h2>
+  <ol>
+    <li>Capture <span class="mono">kubectl top pods</span> (or paste an AIOps-style summary in the same columns).</li>
+    <li>Open <strong>Live vs est</strong>, paste, click <strong>Compare vs estimate</strong>.</li>
+    <li>Pod names are matched by substring map (<span class="mono">dx-core</span>→core, <span class="mono">haproxy</span>, <span class="mono">web-engine</span>, <span class="mono">dam</span>, …).</li>
+    <li>Status: <strong>ok</strong> · <strong>over</strong> (live ≫ estimate) · <strong>under</strong> (live ≪ estimate) · <strong>missing</strong> (no match).</li>
+  </ol>
+
+  <h2 id="exports">11. Exports</h2>
+  <table>
+    <tr><th>Export</th><th>Where</th><th>Use</th></tr>
+    <tr><td>JSON</td><td>Estimator</td><td>Full sizing result (demand, nodes, costs, helmHints)</td></tr>
+    <tr><td>CSV</td><td>Estimator</td><td>BOM spreadsheet</td></tr>
+    <tr><td>Helm resource hints</td><td>Estimator / Calibrate</td><td>YAML-ish <span class="mono">scaling</span> + <span class="mono">resources</span> requests/limits — starting point only</td></tr>
+    <tr><td>Copy Helm hints</td><td>Estimator</td><td>Clipboard</td></tr>
+    <tr><td>Locust scenario mix</td><td>Calibrate</td><td>Task-weight JSON for AIOps Locust</td></tr>
+  </table>
+
+  <h2 id="formulas">12. How the math works (short)</h2>
+  <pre>frontDoorRps = peakRpsOverride OR (U_peak × req_per_session / (T_session_min × 60))
+               × loadMultiplier × (1 + CAGR)
+
+portalRps    = frontDoorRps × (1 − cacheHitRatio)
+
+searchRps    = portalRps × searchAttach × searchesPerHit   (if search enabled)
+damRps       = portalRps × damAttach × assetsPerPage       (if DAM enabled)
+imageRps     = 0.2 × damRps
+iqRps        = U_peak × iqAttach × msgs / sessionSec       (own traffic class)
+
+replicas     = max( ceil(offeredRps / rpsPerReplica), haMin, azCount, minReplicas )
+util         = offeredRps / (replicas × rpsPerReplica)
+
+mem_sessions (Core/webEngine) = U_peak × sessionBytes × 1.3 safety
+tokens/mo    = sessions/day × 30 × iqAttach × msgs × (tok_in + tok_out)
+DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
+  <p>
+    Capacity constants live in <span class="mono">src/profiles/dxcn-cf238.json</span> and
+    <span class="mono">src/profiles/compose-cf237.json</span>
+    (<span class="mono">rpsPerReplica</span>, <span class="mono">cpuPerRps</span>, <span class="mono">memBaseGi</span>, HA floors, etc.).
+  </p>
+
+  <div class="page-break"></div>
+
+  <h2 id="example">13. Worked example</h2>
+  <p><strong>Scenario:</strong> 5,000 peak concurrent users · 40% search attach · 10% DAM · IQ off · DXCN · cache hit 0.4</p>
+  <ol>
+    <li>Select <strong>DXCN</strong>. Leave defaults (or set peak users = 5000, search attach = 0.4, DAM attach = 0.1).</li>
+    <li>Enable <strong>Remote Search</strong> and <strong>DAM</strong> (DAM auto-enables Ring + image + persistence).</li>
+    <li>Estimator shows Core ≥ 2 replicas (HA floor), Remote Search and DAM sized from fan-out RPS, separate infra vs license totals.</li>
+    <li>Open Simulator → slide load to <strong>3×</strong>. Expect Core (and possibly search/DAM) to move amber/red.</li>
+    <li>Click the red node → <strong>Add replica</strong> until util drops under 70%, or raise cache hit / lower attach rates.</li>
+  </ol>
+
+  <h2 id="troubleshoot">14. Troubleshooting</h2>
+  <table>
+    <tr><th>Symptom</th><th>Fix</th></tr>
+    <tr><td>npm can’t find package.json</td><td>Run from <span class="mono">dx-sizing-tool/</span>, not the repo root</td></tr>
+    <tr><td>Remote Search on Compose</td><td>Expected — Compose forces it off; use Search V2</td></tr>
+    <tr><td>Always 2+ Core/webEngine replicas</td><td>HA/AZ floor by design (never recommend 1 for prod)</td></tr>
+    <tr><td>Huge portal RPS</td><td>Raise cache hit ratio; or set peak RPS override explicitly</td></tr>
+    <tr><td>Live compare all “missing”</td><td>Pod names don’t match map — rename needles or include <span class="mono">core</span>/<span class="mono">haproxy</span>/<span class="mono">dam</span> substrings</td></tr>
+    <tr><td>Stale UI state</td><td>Clear <span class="mono">localStorage</span> key <span class="mono">dx-sizing-tool-v1</span></td></tr>
+  </table>
+
+  <h2>15. Project map</h2>
+  <pre>dx-sizing-tool/
+  src/engine/          # pure TS kernel (demand, size, runSizing, helm, calibrate, live)
+  src/catalogs/        # DXCN + Compose topology + toggle resolve
+  src/profiles/        # CF-tagged capacity JSON
+  src/components/      # Estimator, Simulator, Calibrate, Live panels
+  scripts/             # sample Locust measurement JSON
+  docs/user-guide.html # this guide (source)</pre>
+
+  <p class="footer-note">
+    HCL DX Sizing / Estimation Tool — User Guide · Estimation aid only, not HCL official documentation ·
+    Generated for local lab use with DXAutomation.
+  </p>
+
+</body>
+</html>
