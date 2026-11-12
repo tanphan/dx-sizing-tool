@@ -8,18 +8,20 @@ Local Vite + React app: **Estimator** (BOM / cost / sessions) + **Simulator** (t
 
 https://tanphan.github.io/dx-sizing-tool/
 
+Hosted via GitHub Actions Pages from this public repo.
+
 ## Run locally
 
 ```bash
 cd dx-sizing-tool
 npm install
-npm run dev
+npm run dev -- --host 0.0.0.0
 ```
 
 ```bash
 npm test
 npm run build
-# local preview with Pages base path:
+# Pages-base preview:
 # VITE_BASE=/dx-sizing-tool/ npm run build && npx vite preview --base /dx-sizing-tool/
 ```
 
