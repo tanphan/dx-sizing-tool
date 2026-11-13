@@ -12,8 +12,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo, useState } from "react";
+import type { CloudProvider } from "../engine/cloudProviders";
 import type {
   ComponentId,
+  ComponentPlane,
   ComponentToggles,
   Product,
   SizingResult,
@@ -29,6 +31,7 @@ interface Props {
   inputs: UsageInputs;
   toggles: ComponentToggles;
   costs: UnitCosts;
+  cloudProvider: CloudProvider;
   result: SizingResult;
   onInputs: (v: UsageInputs) => void;
   onToggles: (v: ComponentToggles) => void;
@@ -38,11 +41,13 @@ function layoutNodes(
   ids: ComponentId[],
 ): Record<string, { x: number; y: number }> {
   const layers: ComponentId[][] = [
-    ["users", "cdn"],
+    ["users", "dnsGslb"],
+    ["cdn", "waf", "cloudLb"],
     ["haproxy"],
     ["core", "webEngine", "iqIntegrator", "openLdap", "externalIdp"],
     [
       "externalDb",
+      "dxDbSecondary",
       "remoteSearch",
       "searchMiddleware",
       "contentComposer",
@@ -50,6 +55,9 @@ function layoutNodes(
       "dam",
       "mcpService",
       "peopleService",
+      "rwxStorage",
+      "objectStorage",
+      "redis",
     ],
     [
       "openSearch",
@@ -59,8 +67,19 @@ function layoutNodes(
       "loggingSidecar",
       "runtimeController",
       "licenseManager",
+      "secretsKms",
+      "observability",
+      "backupDr",
+      "containerRegistry",
+      "egressNat",
     ],
-    ["persistenceNode", "persistenceMetrics", "damPluginGoogleVision", "damPluginKaltura", "prereqsChecker"],
+    [
+      "persistenceNode",
+      "persistenceMetrics",
+      "damPluginGoogleVision",
+      "damPluginKaltura",
+      "prereqsChecker",
+    ],
   ];
   const pos: Record<string, { x: number; y: number }> = {};
   const idSet = new Set(ids);
@@ -69,11 +88,10 @@ function layoutNodes(
     const present = layer.filter((id) => idSet.has(id));
     present.forEach((id, i) => {
       const span = Math.max(present.length, 1);
-      pos[id] = { x: 80 + i * 200 - (span - 1) * 40, y };
+      pos[id] = { x: 40 + i * 190 - (span - 1) * 20, y };
     });
     if (present.length) y += 130;
   }
-  // leftovers
   let lx = 0;
   for (const id of ids) {
     if (!pos[id]) {
@@ -91,10 +109,16 @@ function UtilNode({ data }: NodeProps) {
     util: number;
     replicas: number;
     offeredRps: number;
+    plane: ComponentPlane;
   };
   return (
-    <div className={`flow-node ${d.utilBand === "n/a" ? "na" : d.utilBand}`}>
+    <div
+      className={`flow-node plane-${d.plane} ${d.utilBand === "n/a" ? "na" : d.utilBand}`}
+    >
       <Handle type="target" position={Position.Top} />
+      <div className="plane-badge">
+        {d.plane === "hcl" ? "HCL DX" : d.plane === "platform" ? "Platform" : "Client"}
+      </div>
       <div className="title">{d.label}</div>
       <div className="meta">
         {d.offeredRps.toFixed(1)} rps · x{d.replicas}
@@ -112,6 +136,7 @@ export function Simulator({
   inputs,
   toggles,
   costs,
+  cloudProvider,
   result,
   onInputs,
   onToggles,
@@ -129,37 +154,40 @@ export function Simulator({
         inputs,
         toggles,
         costs,
+        cloudProvider,
         replicaOverrides,
         enableCdn,
       }),
-    [product, inputs, toggles, costs, replicaOverrides, enableCdn],
+    [product, inputs, toggles, costs, cloudProvider, replicaOverrides, enableCdn],
   );
 
-  const { nodes: topoNodes } = selectTopology(product, toggles);
+  const { nodes: topoNodes } = selectTopology(
+    product,
+    toggles,
+    inputs.productionPlatform,
+  );
 
   const flowNodes: Node[] = useMemo(() => {
-    const ids = [
-      ...topoNodes.map((n) => n.id),
-    ];
-    // ensure users+cdn present for graph
+    const ids = topoNodes.map((n) => n.id);
     const withEntry = Array.from(
       new Set<ComponentId>(["users", "cdn", ...ids]),
     );
     const pos = layoutNodes(withEntry);
     const sizedMap = new Map(liveResult.nodes.map((n) => [n.id, n]));
+    const planeMap = new Map(topoNodes.map((n) => [n.id, n.plane]));
 
     return withEntry.map((id) => {
       const sized = sizedMap.get(id);
       const label =
-        sized?.label ??
-        topoNodes.find((n) => n.id === id)?.label ??
-        id;
+        sized?.label ?? topoNodes.find((n) => n.id === id)?.label ?? id;
+      const plane = sized?.plane ?? planeMap.get(id) ?? "client";
       return {
         id,
         type: "util",
         position: pos[id],
         data: {
           label,
+          plane,
           utilBand: sized?.utilBand ?? "n/a",
           util: sized?.util ?? 0,
           replicas: sized?.replicas ?? 0,
@@ -218,6 +246,11 @@ export function Simulator({
           />
           CDN enabled
         </label>
+        <div className="legend-row">
+          <span className="plane-tag hcl">HCL DX</span>
+          <span className="plane-tag platform">Platform</span>
+          <span className="plane-tag client">Client</span>
+        </div>
         <div className="preset-row">
           {scenarioPresets.map((p) => (
             <button
@@ -250,11 +283,10 @@ export function Simulator({
           <Controls />
           <MiniMap
             nodeColor={(n) => {
-              const b = (n.data as { utilBand?: string })?.utilBand;
-              if (b === "green") return "#3ecf8e";
-              if (b === "amber") return "#e8a838";
-              if (b === "red") return "#ef6b6b";
-              return "#2a3544";
+              const plane = (n.data as { plane?: string })?.plane;
+              if (plane === "hcl") return "#3d9cf0";
+              if (plane === "platform") return "#c4a35a";
+              return "#6b7c8f";
             }}
           />
         </ReactFlow>
@@ -264,6 +296,9 @@ export function Simulator({
         <div className="drawer">
           <h3>
             {selectedNode.label}{" "}
+            <span className={`plane-tag ${selectedNode.plane}`}>
+              {selectedNode.plane}
+            </span>{" "}
             <span className="muted">({selectedNode.utilBand})</span>
           </h3>
           <p className="muted">
@@ -317,8 +352,9 @@ export function Simulator({
 
       {!selectedNode && (
         <p className="muted" style={{ marginTop: 8 }}>
-          Same engine as estimator (profile {result.profileId}). Click a node
-          for util / fix actions. Load slider scales peak demand.
+          Same engine as estimator (profile {result.profileId}). Blue =
+          HCL DX · gold/dashed = platform · grey = client. Origin WAF sits
+          after CDN.
         </p>
       )}
     </div>

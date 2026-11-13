@@ -33,6 +33,7 @@ export const defaultUsageInputs: UsageInputs = {
   growthCagr: 0.15,
   loadMultiplier: 1,
   sessionBytesKb: 150,
+  productionPlatform: false,
 };
 
 export const defaultUnitCosts: UnitCosts = {

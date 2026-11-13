@@ -1,21 +1,23 @@
-import type { ComponentToggles, Demand, UsageInputs } from "./types";
+import type { ComponentToggles, Demand, Product, UsageInputs } from "./types";
 
 export function normalizeInputs(
   raw: UsageInputs,
   toggles: ComponentToggles,
+  product: Product = "dxcn",
 ): Demand {
   const growth = 1 + Math.max(0, raw.growthCagr);
   const uPeak = raw.peakConcurrentUsers * growth * raw.loadMultiplier;
   const sessionSec = Math.max(1, raw.sessionDurationMin * 60);
-  const derivedRps =
-    (uPeak * raw.reqPerSession) / sessionSec;
+  const derivedRps = (uPeak * raw.reqPerSession) / sessionSec;
   const frontDoorRps =
     (raw.peakRpsOverride > 0 ? raw.peakRpsOverride : derivedRps) *
     raw.loadMultiplier *
     growth;
 
   const miss = Math.max(0, Math.min(1, 1 - raw.cacheHitRatio));
-  const portalRps = frontDoorRps * miss;
+  /** Origin RPS after CDN (hits WAF when production platform on) */
+  const originRps = frontDoorRps * miss;
+  const portalRps = originRps;
   const dbRps = portalRps * (0.35 + 0.25 * (raw.pctBrowse / 100));
   const searchOn = !!(toggles.remoteSearch || toggles.searchMiddleware);
   const searchRps = searchOn
@@ -27,8 +29,6 @@ export function normalizeInputs(
     : 0;
   const imageRps = damOn ? damRps * 0.2 : 0;
   const persistRps = damOn ? damRps : 0;
-  // Auth tax is back-channel (Core/webEngine→LDAP or →IdP token/JWKS), not HAProxy→IdP.
-  // Browser→IdP redirects are modeled as a parallel graph edge using the same authRps scale.
   const authFrac = raw.pctAuthenticated / 100;
   const authRps =
     toggles.openLdap || toggles.externalIdp
@@ -60,6 +60,15 @@ export function normalizeInputs(
     ? Math.max(5, (raw.contentItems / 1000) * 0.8)
     : 0;
 
+  // RWX: DXCN Core shared FS base + DAM file share when DAM on. Compose/webEngine: DAM-only.
+  let rwxStorageGi = 0;
+  if (product === "dxcn") {
+    rwxStorageGi = Math.max(100, (raw.contentItems / 1000) * 2 + 50);
+  }
+  if (damOn) {
+    rwxStorageGi += Math.max(50, damStorageGiMonth * 0.5 + 20);
+  }
+
   const tokensPerMonth = iqEnabled
     ? sessionsPerDay *
       30 *
@@ -71,6 +80,7 @@ export function normalizeInputs(
   return {
     frontDoorRps,
     portalRps,
+    originRps,
     dbRps,
     searchRps,
     damRps,
@@ -84,6 +94,7 @@ export function normalizeInputs(
     sessionsPerDay,
     damStorageGiMonth,
     searchIndexGi,
+    rwxStorageGi,
     tokensPerMonth,
     iqEnabled,
   };

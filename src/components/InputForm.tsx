@@ -1,4 +1,6 @@
 import type { ChangeEvent, ReactNode } from "react";
+import type { CloudProvider } from "../engine/cloudProviders";
+import { cloudProviders } from "../engine/cloudProviders";
 import type { ComponentToggles, Product, UnitCosts, UsageInputs } from "../engine/types";
 import { getCatalog } from "../catalogs";
 import { scenarioPresets, applyScenario } from "../scenarios";
@@ -8,6 +10,7 @@ interface Props {
   inputs: UsageInputs;
   toggles: ComponentToggles;
   costs: UnitCosts;
+  cloudProvider: CloudProvider;
   onInputs: (v: UsageInputs) => void;
   onToggles: (v: ComponentToggles) => void;
   onCosts: (v: UnitCosts) => void;
@@ -63,6 +66,19 @@ const TOGGLE_HINTS: Partial<Record<string, string>> = {
   peopleService: "People directory traffic class",
   iqIntegrator: "AI chat path; token OpEx; forces MCP",
   mcpService: "Tool calls for IQ agents",
+  dnsGslb: "DNS / global load balancing",
+  waf: "Origin WAF (after CDN miss)",
+  cloudLb: "Cloud L7/L4 load balancer into K8s",
+  dxDbSecondary: "DX DB failover / sync standby",
+  rwxStorage:
+    "RWX shared FS — required for DXCN Core; Compose webEngine never; DAM needs it",
+  objectStorage: "S3/Blob/GCS for DAM binaries",
+  redis: "Optional session/cache",
+  secretsKms: "Secrets manager + KMS",
+  observability: "Metrics / logs / traces stack",
+  backupDr: "Backup + DR snapshots",
+  containerRegistry: "Private image registry",
+  egressNat: "Private-cluster egress",
 };
 
 export function InputForm({
@@ -70,15 +86,45 @@ export function InputForm({
   inputs,
   toggles,
   costs,
+  cloudProvider,
   onInputs,
   onToggles,
   onCosts,
 }: Props) {
   const catalog = getCatalog(product);
-  const optionals = catalog.nodes.filter((n) => n.optionalKey);
+  const cloud = cloudProviders[cloudProvider];
+  const hclOptionals = catalog.nodes.filter(
+    (n) => n.optionalKey && n.plane === "hcl",
+  );
+  const platformOptionals = catalog.nodes.filter(
+    (n) => n.optionalKey && n.plane === "platform",
+  );
 
   return (
     <>
+      <div className="section">
+        <h2>Cloud & production</h2>
+        <p className="field-hint" style={{ marginBottom: 8 }}>
+          Provider: <strong>{cloud.label}</strong> — SKUs label platform nodes
+        </p>
+        <label className="toggle" style={{ marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={!!inputs.productionPlatform}
+            onChange={(e) =>
+              onInputs({ ...inputs, productionPlatform: e.target.checked })
+            }
+          />
+          <span>
+            Production platform plane
+            <span className="toggle-hint">
+              Forces origin WAF + Cloud LB + DB secondary + secrets/obs/backup
+              (CDN → WAF → LB → HAProxy)
+            </span>
+          </span>
+        </label>
+      </div>
+
       <div className="section">
         <h2>Scenarios</h2>
         <div className="preset-row">
@@ -389,13 +435,13 @@ export function InputForm({
       </details>
 
       <div className="section" style={{ marginTop: 14 }}>
-        <h2>Optional components</h2>
+        <h2>HCL DX components</h2>
         <div className="toggle-grid">
-          {optionals.map((n) => {
+          {hclOptionals.map((n) => {
             const key = n.optionalKey!;
             const disabled = product === "compose" && key === "remoteSearch";
             return (
-              <label key={n.id} className="toggle">
+              <label key={n.id} className="toggle plane-hcl">
                 <input
                   type="checkbox"
                   disabled={disabled}
@@ -408,6 +454,48 @@ export function InputForm({
                   {n.label}
                   {TOGGLE_HINTS[key] && (
                     <span className="toggle-hint">{TOGGLE_HINTS[key]}</span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="section" style={{ marginTop: 14 }}>
+        <h2>Platform / cloud components</h2>
+        <p className="field-hint" style={{ marginBottom: 6 }}>
+          RWX: on for DXCN Core always; Compose webEngine never; DAM forces RWX
+          on both.
+        </p>
+        <div className="toggle-grid">
+          {platformOptionals.map((n) => {
+            const key = n.optionalKey!;
+            const forcedRwx =
+              (product === "dxcn" && key === "rwxStorage") ||
+              (!!toggles.dam && key === "rwxStorage");
+            const blockedRwx =
+              product === "compose" && !toggles.dam && key === "rwxStorage";
+            return (
+              <label key={n.id} className="toggle plane-platform">
+                <input
+                  type="checkbox"
+                  disabled={forcedRwx || blockedRwx}
+                  checked={
+                    blockedRwx ? false : forcedRwx ? true : !!toggles[key]
+                  }
+                  onChange={(e) =>
+                    onToggles({ ...toggles, [key]: e.target.checked })
+                  }
+                />
+                <span>
+                  {n.label}
+                  {cloud.skus[n.id] ? (
+                    <span className="toggle-hint">{cloud.skus[n.id]}</span>
+                  ) : (
+                    TOGGLE_HINTS[key] && (
+                      <span className="toggle-hint">{TOGGLE_HINTS[key]}</span>
+                    )
                   )}
                 </span>
               </label>

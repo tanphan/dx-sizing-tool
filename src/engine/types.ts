@@ -1,5 +1,7 @@
 export type Product = "dxcn" | "compose";
 
+export type ComponentPlane = "hcl" | "platform" | "client";
+
 export type ComponentId =
   | "users"
   | "cdn"
@@ -28,7 +30,19 @@ export type ComponentId =
   | "licenseManager"
   | "peopleService"
   | "iqIntegrator"
-  | "mcpService";
+  | "mcpService"
+  | "dnsGslb"
+  | "waf"
+  | "cloudLb"
+  | "dxDbSecondary"
+  | "rwxStorage"
+  | "objectStorage"
+  | "redis"
+  | "secretsKms"
+  | "observability"
+  | "backupDr"
+  | "containerRegistry"
+  | "egressNat";
 
 export type ComponentToggleKey = Exclude<
   ComponentId,
@@ -77,6 +91,8 @@ export interface UsageInputs {
   growthCagr: number;
   loadMultiplier: number;
   sessionBytesKb: number;
+  /** Include cloud-native platform plane (WAF, LB, DB HA, …) */
+  productionPlatform: boolean;
 }
 
 export interface UnitCosts {
@@ -141,6 +157,8 @@ export interface TopologyNode {
   label: string;
   always: boolean;
   optionalKey?: ComponentToggleKey;
+  /** Visual / BOM grouping: HCL DX vs cloud platform vs client */
+  plane: ComponentPlane;
 }
 
 export interface ProductCatalog {
@@ -155,6 +173,7 @@ export type ComponentToggles = Partial<Record<ComponentToggleKey, boolean>>;
 export interface Demand {
   frontDoorRps: number;
   portalRps: number;
+  originRps: number;
   dbRps: number;
   searchRps: number;
   damRps: number;
@@ -168,6 +187,7 @@ export interface Demand {
   sessionsPerDay: number;
   damStorageGiMonth: number;
   searchIndexGi: number;
+  rwxStorageGi: number;
   tokensPerMonth: number;
   iqEnabled: boolean;
 }
@@ -175,6 +195,7 @@ export interface Demand {
 export interface SizedNode {
   id: ComponentId;
   label: string;
+  plane: ComponentPlane;
   offeredRps: number;
   capacityRps: number;
   util: number;
@@ -194,10 +215,15 @@ export interface SessionSummary {
   sessionFootprintMi: number;
   recommendedTimeoutMin: number;
   stickySessions: boolean;
+  jvmHeapGi?: number;
+  podMemoryGi?: number;
+  podCpu?: number;
 }
 
 export interface CostTotals {
   infraMonth: number;
+  platformMonth: number;
+  hclRuntimeMonth: number;
   licenseMonth: number;
   tokenMonth: number;
   llmInfraMonth: number;
@@ -212,6 +238,7 @@ export interface SizingResult {
   product: Product;
   profileId: string;
   confidence: "default" | "lab-calibrated";
+  cloudProvider?: string;
   demand: Demand;
   nodes: SizedNode[];
   edges: Array<TopologyEdge & { rps: number }>;
@@ -219,6 +246,7 @@ export interface SizingResult {
   costs: CostTotals;
   warnings: string[];
   helmHints: HelmHints;
+  hclDocUrl: string;
 }
 
 export interface HelmHints {

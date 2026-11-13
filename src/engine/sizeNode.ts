@@ -1,7 +1,9 @@
 import { HOURS_PER_MONTH } from "./defaults";
+import { HCL_CORE_POD, HCL_SIZING_DOC } from "./hclGuidance";
 import type {
   CapacityProfile,
   ComponentId,
+  ComponentPlane,
   ComponentProfile,
   Demand,
   SizedNode,
@@ -21,14 +23,18 @@ function offeredFor(id: ComponentId, demand: Demand): number {
   switch (id) {
     case "users":
     case "cdn":
+    case "dnsGslb":
       return demand.frontDoorRps;
+    case "waf":
+    case "cloudLb":
+      return demand.originRps + demand.iqRps;
     case "haproxy":
-      // Auth to external IdP is browser redirect + Core/webEngine back-channel — not HAProxy→IdP.
       return demand.portalRps + demand.iqRps;
     case "core":
     case "webEngine":
       return demand.portalRps;
     case "externalDb":
+    case "dxDbSecondary":
       return demand.dbRps;
     case "remoteSearch":
     case "searchMiddleware":
@@ -60,6 +66,14 @@ function offeredFor(id: ComponentId, demand: Demand): number {
       return demand.damRps * 0.05;
     case "peopleService":
       return demand.portalRps * 0.05;
+    case "rwxStorage":
+    case "objectStorage":
+    case "redis":
+    case "secretsKms":
+    case "observability":
+    case "backupDr":
+    case "containerRegistry":
+    case "egressNat":
     case "loggingSidecar":
     case "runtimeController":
     case "prereqsChecker":
@@ -75,6 +89,7 @@ function offeredFor(id: ComponentId, demand: Demand): number {
 export function sizeNode(
   id: ComponentId,
   label: string,
+  plane: ComponentPlane,
   demand: Demand,
   profile: ComponentProfile | undefined,
   costs: UnitCosts,
@@ -85,6 +100,7 @@ export function sizeNode(
     return {
       id,
       label,
+      plane,
       offeredRps: offeredFor(id, demand),
       capacityRps: 0,
       util: 0,
@@ -113,6 +129,9 @@ export function sizeNode(
     if (id === "prereqsChecker") {
       notes.push("Job-only; ignored in steady-state cost");
     }
+    if (id === "dxDbSecondary") {
+      notes.push("Failover / sync standby — sized ≈ primary storage, partial CPU");
+    }
   } else if (!profile.scalable) {
     replicas = Math.max(profile.minReplicas, 1);
   } else {
@@ -125,9 +144,8 @@ export function sizeNode(
   }
 
   const perRepRps = offered / Math.max(1, replicas);
-  const cpuCores =
-    replicas *
-    (profile.cpuBase + profile.cpuPerRps * perRepRps);
+  let cpuCores =
+    replicas * (profile.cpuBase + profile.cpuPerRps * perRepRps);
 
   let memGi =
     replicas *
@@ -141,9 +159,19 @@ export function sizeNode(
     const sessionMem =
       (demand.concurrentSessions * inputs.sessionBytesKb) / 1024 / 1024;
     memGi = Math.max(memGi, replicas * profile.memBaseGi + sessionMem * 1.3);
+    // HCL K8s guidance floors (CF239)
+    cpuCores = Math.max(cpuCores, replicas * HCL_CORE_POD.cpu);
+    memGi = Math.max(memGi, replicas * HCL_CORE_POD.podMemoryGi);
+    notes.push(HCL_CORE_POD.note);
     notes.push(
       `Session memory ~${(sessionMem * 1.3).toFixed(1)} Gi (incl 30% safety)`,
     );
+    notes.push(`Ref: ${HCL_SIZING_DOC}`);
+  }
+
+  if (id === "dxDbSecondary") {
+    cpuCores = Math.max(cpuCores, 2);
+    memGi = Math.max(memGi, 8);
   }
 
   let storageGi = replicas * profile.storageBaseGi;
@@ -151,13 +179,27 @@ export function sizeNode(
   if (id === "openSearch" || id === "remoteSearch") {
     storageGi += demand.searchIndexGi;
   }
-  if (id === "externalDb") {
+  if (id === "externalDb" || id === "dxDbSecondary") {
     storageGi += Math.max(50, demand.searchIndexGi * 0.5);
+  }
+  if (id === "rwxStorage") {
+    storageGi = Math.max(storageGi, demand.rwxStorageGi);
+    notes.push(
+      "DXCN Core requires RWX; Compose webEngine does not — DAM adds RWX when enabled",
+    );
+  }
+  if (id === "objectStorage") {
+    storageGi += demand.damStorageGiMonth;
+  }
+  if (id === "backupDr") {
+    storageGi += demand.rwxStorageGi * 0.5 + demand.damStorageGiMonth;
   }
 
   const capacityRps = replicas * profile.rpsPerReplica;
   const util =
-    profile.fixed || capacityRps <= 0 ? 0 : offered / capacityRps;
+    profile.fixed || capacityRps <= 0 || offered === 0
+      ? 0
+      : offered / capacityRps;
 
   const infraCostMonth =
     cpuCores * HOURS_PER_MONTH * costs.vcpuPerHour +
@@ -175,6 +217,7 @@ export function sizeNode(
   return {
     id,
     label,
+    plane,
     offeredRps: offered,
     capacityRps,
     util,
@@ -202,7 +245,8 @@ export function edgeRatio(
       return miss;
     case "portal":
       return demand.frontDoorRps > 0
-        ? demand.portalRps / (demand.portalRps + demand.iqRps + demand.authRps || 1)
+        ? demand.portalRps /
+            (demand.portalRps + demand.iqRps + demand.authRps || 1)
         : 1;
     case "db":
       return demand.portalRps > 0 ? demand.dbRps / demand.portalRps : 0;
@@ -215,7 +259,6 @@ export function edgeRatio(
     case "persist":
       return 1;
     case "auth":
-      // Absolute-ish: parentRps × ratio ≈ authRps when parent is portal (Core/webEngine).
       return demand.portalRps > 0 ? demand.authRps / demand.portalRps : 0;
     case "iq":
       return demand.frontDoorRps > 0

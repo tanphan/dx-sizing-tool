@@ -9,3 +9,5 @@ export * from "./helm";
 export * from "./calibrate";
 export * from "./liveCompare";
 export * from "./export";
+export * from "./hclGuidance";
+export * from "./cloudProviders";

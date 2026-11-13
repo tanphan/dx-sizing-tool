@@ -1,5 +1,6 @@
 import type { ComponentToggles, UsageInputs } from "./engine/types";
 import { defaultUsageInputs } from "./engine/defaults";
+import { hclAuthPercents, HCL_RENDERING_MIX, HCL_TIERS } from "./engine/hclGuidance";
 import { defaultToggles } from "./catalogs";
 
 export interface ScenarioPreset {
@@ -10,7 +11,48 @@ export interface ScenarioPreset {
   toggles?: Partial<ComponentToggles>;
 }
 
+const hclAuth = hclAuthPercents();
+
 export const scenarioPresets: ScenarioPreset[] = [
+  {
+    id: "hcl-small",
+    label: HCL_TIERS.small.label,
+    description:
+      "HCL CF239 K8s rendering mix: WCM 40% / pages 30% / DAM 30%, 1k concurrent VU",
+    patch: {
+      peakConcurrentUsers: HCL_TIERS.small.concurrentUsers,
+      pctAnonymous: hclAuth.pctAnonymous,
+      pctAuthenticated: hclAuth.pctAuthenticated,
+      pctBrowse: Math.round((HCL_RENDERING_MIX.wcm + HCL_RENDERING_MIX.pagesPortlets) * 100),
+      pctAuthor: 5,
+      pctFormPost: 5,
+      damAttachRate: HCL_RENDERING_MIX.dam,
+      assetsPerPage: 2,
+      contentItems: 12800,
+      productionPlatform: true,
+    },
+    toggles: { dam: true, openLdap: true },
+  },
+  {
+    id: "hcl-large",
+    label: HCL_TIERS.large.label,
+    description:
+      "HCL CF239 large rendering anchor: 30k concurrent VU, same mix as small",
+    patch: {
+      peakConcurrentUsers: HCL_TIERS.large.concurrentUsers,
+      pctAnonymous: hclAuth.pctAnonymous,
+      pctAuthenticated: hclAuth.pctAuthenticated,
+      pctBrowse: Math.round((HCL_RENDERING_MIX.wcm + HCL_RENDERING_MIX.pagesPortlets) * 100),
+      pctAuthor: 5,
+      pctFormPost: 5,
+      damAttachRate: HCL_RENDERING_MIX.dam,
+      assetsPerPage: 3,
+      contentItems: 50000,
+      productionPlatform: true,
+      cacheHitRatio: 0.5,
+    },
+    toggles: { dam: true, openLdap: true },
+  },
   {
     id: "anon-browse",
     label: "Anonymous browse",

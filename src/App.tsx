@@ -6,10 +6,12 @@ import { InputForm } from "./components/InputForm";
 import { LiveComparePanel } from "./components/LiveComparePanel";
 import { Simulator } from "./components/Simulator";
 import {
+  cloudProviderList,
   defaultUnitCosts,
   defaultUsageInputs,
   getDefaultProfileId,
   runSizing,
+  type CloudProvider,
   type ComponentToggles,
   type Product,
   type UnitCosts,
@@ -18,13 +20,14 @@ import {
 
 type Tab = "estimator" | "simulator" | "calibrate" | "live";
 
-const STORAGE_KEY = "dx-sizing-tool-v1";
+const STORAGE_KEY = "dx-sizing-tool-v2";
 
 function loadState(): {
   product: Product;
   inputs: UsageInputs;
   toggles: ComponentToggles;
   costs: UnitCosts;
+  cloudProvider: CloudProvider;
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -34,6 +37,7 @@ function loadState(): {
       inputs: UsageInputs;
       toggles: ComponentToggles;
       costs: UnitCosts;
+      cloudProvider: CloudProvider;
     };
   } catch {
     return null;
@@ -43,14 +47,18 @@ function loadState(): {
 export default function App() {
   const saved = loadState();
   const [product, setProduct] = useState<Product>(saved?.product ?? "dxcn");
-  const [inputs, setInputs] = useState<UsageInputs>(
-    saved?.inputs ?? defaultUsageInputs,
-  );
+  const [inputs, setInputs] = useState<UsageInputs>({
+    ...defaultUsageInputs,
+    ...saved?.inputs,
+  });
   const [toggles, setToggles] = useState<ComponentToggles>(
     saved?.toggles ?? defaultToggles("dxcn"),
   );
   const [costs, setCosts] = useState<UnitCosts>(
     saved?.costs ?? defaultUnitCosts,
+  );
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider>(
+    saved?.cloudProvider ?? "aws",
   );
   const [tab, setTab] = useState<Tab>("estimator");
   const [profileId, setProfileId] = useState<string | undefined>();
@@ -62,9 +70,10 @@ export default function App() {
         inputs,
         toggles,
         costs,
+        cloudProvider,
         profileId: profileId ?? getDefaultProfileId(product),
       }),
-    [product, inputs, toggles, costs, profileId],
+    [product, inputs, toggles, costs, cloudProvider, profileId],
   );
 
   const persist = (
@@ -73,6 +82,7 @@ export default function App() {
       inputs: UsageInputs;
       toggles: ComponentToggles;
       costs: UnitCosts;
+      cloudProvider: CloudProvider;
     }>,
   ) => {
     const payload = {
@@ -80,6 +90,7 @@ export default function App() {
       inputs: next.inputs ?? inputs,
       toggles: next.toggles ?? toggles,
       costs: next.costs ?? costs,
+      cloudProvider: next.cloudProvider ?? cloudProvider,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   };
@@ -98,8 +109,9 @@ export default function App() {
         <div className="brand">
           <h1>HCL DX Sizing / Estimation</h1>
           <span>
-            Estimator + traffic simulator · {result.profileId} · not official
-            SCU
+            Estimator + simulator · {result.profileId}
+            {result.cloudProvider ? ` · ${result.cloudProvider}` : ""} · not
+            official SCU
           </span>
         </div>
         <div className="controls">
@@ -119,6 +131,22 @@ export default function App() {
               DX Compose
             </button>
           </div>
+          <select
+            className="cloud-select"
+            value={cloudProvider}
+            onChange={(e) => {
+              const v = e.target.value as CloudProvider;
+              setCloudProvider(v);
+              persist({ cloudProvider: v });
+            }}
+            title="Cloud provider"
+          >
+            {cloudProviderList.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.short}
+              </option>
+            ))}
+          </select>
           <div className="seg">
             {(
               [
@@ -148,6 +176,7 @@ export default function App() {
             inputs={inputs}
             toggles={toggles}
             costs={costs}
+            cloudProvider={cloudProvider}
             onInputs={(v) => {
               setInputs(v);
               persist({ inputs: v });
@@ -170,6 +199,7 @@ export default function App() {
               inputs={inputs}
               toggles={toggles}
               costs={costs}
+              cloudProvider={cloudProvider}
               result={result}
               onInputs={(v) => {
                 setInputs(v);

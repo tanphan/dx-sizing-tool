@@ -370,13 +370,103 @@ table.bom th {
   min-height: 480px;
 }
 
+.cloud-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.plane-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.plane-tag.hcl {
+  background: color-mix(in srgb, #3d9cf0 25%, transparent);
+  color: #8ec8f8;
+  border: 1px solid #3d9cf0;
+}
+
+.plane-tag.platform {
+  background: color-mix(in srgb, #c4a35a 22%, transparent);
+  color: #e6d3a3;
+  border: 1px dashed #c4a35a;
+}
+
+.plane-tag.client {
+  background: color-mix(in srgb, #6b7c8f 25%, transparent);
+  color: #b7c2ce;
+  border: 1px solid #6b7c8f;
+}
+
+.toggle.plane-hcl {
+  border-color: color-mix(in srgb, #3d9cf0 45%, var(--border));
+}
+
+.toggle.plane-platform {
+  border-style: dashed;
+  border-color: color-mix(in srgb, #c4a35a 55%, var(--border));
+}
+
+.row-plane-hcl td:first-child {
+  box-shadow: inset 3px 0 0 #3d9cf0;
+}
+
+.row-plane-platform td:first-child {
+  box-shadow: inset 3px 0 0 #c4a35a;
+}
+
 .flow-node {
-  min-width: 140px;
+  min-width: 150px;
+  max-width: 200px;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-elev);
   font-size: 0.75rem;
+}
+
+.flow-node.plane-hcl {
+  border: 2px solid #3d9cf0;
+  border-radius: 10px;
+  background: color-mix(in srgb, #3d9cf0 8%, var(--bg-elev));
+}
+
+.flow-node.plane-platform {
+  border: 2px dashed #c4a35a;
+  border-radius: 2px;
+  background: color-mix(in srgb, #c4a35a 10%, var(--bg-elev));
+}
+
+.flow-node.plane-client {
+  border: 1px solid #6b7c8f;
+  border-radius: 999px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.plane-badge {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 2px;
 }
 
 .flow-node.green {

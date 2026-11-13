@@ -36,6 +36,16 @@ npm run build
 
 External IdP (OIDC/SAML) is **not** behind HAProxy: browser → IdP redirect, then Core/webEngine → IdP back-channel (token/JWKS). OpenLDAP binds are Core/webEngine → LDAP. Login callback/ACS returns as portal traffic via HAProxy.
 
+## RWX / production platform
+
+- **DXCN Core** always requires **RWX** shared storage.
+- **Compose webEngine** does **not** use RWX.
+- **DAM** (either product) forces RWX when enabled.
+- Production plane: CDN miss → **origin WAF** → Cloud LB → HAProxy (AWS / Azure / GKE / RHOS SKUs).
+- Core/webEngine CPU/mem floors follow the [HCL DX Compose K8s sizing guide (CF239)](https://help.hcl-software.com/digital-experience/dx-compose/CF239/guide_me/performance_tuning/kubernetes/) (5.6 CPU, 8Gi pod, heap 4Gi Xms=Xmx).
+
+Simulator: **blue** = HCL DX · **gold dashed** = platform/cloud · **pill** = client/edge.
+
 ## Calibration
 
 1. Run Locust scenarios on lab; capture RPS + CPU per component.

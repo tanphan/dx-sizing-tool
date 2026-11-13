@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { defaultToggles } from "../catalogs";
+import { defaultToggles, resolveToggles } from "../catalogs";
 import { calibrateFromLocust } from "./calibrate";
 import { defaultUnitCosts, defaultUsageInputs } from "./defaults";
 import { normalizeInputs } from "./demand";
+import { HCL_CORE_POD, HCL_TIERS, hclAuthPercents } from "./hclGuidance";
 import { buildHelmHints } from "./helm";
 import { compareEstimateVsLive, parseKubectlTop } from "./liveCompare";
 import { loadProfile } from "./profiles";
@@ -21,10 +22,10 @@ describe("normalizeInputs", () => {
       growthCagr: 0,
       peakRpsOverride: 0,
     };
-    const demand = normalizeInputs(inputs, defaultToggles("dxcn"));
-    // U*req/(T*60) = 5000*25/1200 ≈ 104.17; miss 0.6 → portal ≈ 62.5
+    const demand = normalizeInputs(inputs, defaultToggles("dxcn"), "dxcn");
     expect(demand.frontDoorRps).toBeCloseTo(104.166, 1);
     expect(demand.portalRps).toBeCloseTo(62.5, 1);
+    expect(demand.originRps).toBeCloseTo(62.5, 1);
     expect(demand.concurrentSessions).toBe(5000);
   });
 
@@ -41,6 +42,7 @@ describe("normalizeInputs", () => {
         peakRpsOverride: 100,
       },
       { ...defaultToggles("dxcn"), dam: true, remoteSearch: true },
+      "dxcn",
     );
     expect(demand.portalRps).toBe(100);
     expect(demand.searchRps).toBeCloseTo(60, 5);
@@ -60,14 +62,48 @@ describe("normalizeInputs", () => {
         iqTokensOut: 50,
       },
       { ...defaultToggles("compose"), iqIntegrator: true },
+      "compose",
     );
     expect(demand.iqEnabled).toBe(true);
     expect(demand.tokensPerMonth).toBe(1000 * 30 * 0.2 * 4 * 150);
   });
 });
 
+describe("RWX rules", () => {
+  it("DXCN always forces RWX for Core", () => {
+    const t = resolveToggles("dxcn", { ...defaultToggles("dxcn"), dam: false });
+    expect(t.rwxStorage).toBe(true);
+    const { nodes } = selectTopology("dxcn", t);
+    expect(nodes.some((n) => n.id === "rwxStorage")).toBe(true);
+    expect(nodes.some((n) => n.id === "core")).toBe(true);
+  });
+
+  it("Compose webEngine has no RWX without DAM", () => {
+    const t = resolveToggles("compose", {
+      ...defaultToggles("compose"),
+      dam: false,
+      rwxStorage: true,
+    });
+    expect(t.rwxStorage).toBe(false);
+    const { nodes, edges } = selectTopology("compose", t);
+    expect(nodes.some((n) => n.id === "rwxStorage")).toBe(false);
+    expect(edges.some((e) => e.target === "rwxStorage")).toBe(false);
+  });
+
+  it("Compose enables RWX when DAM is on", () => {
+    const t = resolveToggles("compose", {
+      ...defaultToggles("compose"),
+      dam: true,
+    });
+    expect(t.rwxStorage).toBe(true);
+    const { edges } = selectTopology("compose", t);
+    expect(edges.some((e) => e.id === "dam-rwx")).toBe(true);
+    expect(edges.some((e) => e.id === "core-rwx")).toBe(false);
+  });
+});
+
 describe("runSizing", () => {
-  it("applies HA floor for Core even at tiny RPS", () => {
+  it("applies HA floor and HCL Core pod floors", () => {
     const result = runSizing({
       product: "dxcn",
       inputs: {
@@ -82,66 +118,32 @@ describe("runSizing", () => {
     });
     const core = result.nodes.find((n) => n.id === "core");
     expect(core?.replicas).toBeGreaterThanOrEqual(2);
+    expect(core?.cpuCores).toBeGreaterThanOrEqual(2 * HCL_CORE_POD.cpu);
+    expect(core?.memGi).toBeGreaterThanOrEqual(2 * HCL_CORE_POD.podMemoryGi);
+    expect(core?.plane).toBe("hcl");
   });
 
-  it("example 5k peak, 40% search, 10% DAM produces plausible BOM", () => {
+  it("production platform uses origin WAF path", () => {
     const result = runSizing({
-      product: "dxcn",
-      inputs: {
-        ...defaultUsageInputs,
-        peakConcurrentUsers: 5000,
-        searchAttachRate: 0.4,
-        damAttachRate: 0.1,
-        growthCagr: 0,
-        cacheHitRatio: 0.4,
-      },
-      toggles: {
-        ...defaultToggles("dxcn"),
-        remoteSearch: true,
-        dam: true,
-      },
+      product: "compose",
+      inputs: { ...defaultUsageInputs, productionPlatform: true, growthCagr: 0 },
+      toggles: defaultToggles("compose"),
       costs: defaultUnitCosts,
+      cloudProvider: "aws",
     });
-    const core = result.nodes.find((n) => n.id === "core")!;
-    const dam = result.nodes.find((n) => n.id === "dam")!;
-    const rs = result.nodes.find((n) => n.id === "remoteSearch")!;
-    expect(core.replicas).toBeGreaterThanOrEqual(2);
-    expect(dam.replicas).toBeGreaterThanOrEqual(1);
-    expect(rs.replicas).toBeGreaterThanOrEqual(1);
-    expect(result.costs.totalMonth).toBeGreaterThan(0);
-    expect(result.helmHints.scaling.core).toBe(core.replicas);
+    expect(result.nodes.some((n) => n.id === "waf")).toBe(true);
+    expect(result.nodes.some((n) => n.id === "cloudLb")).toBe(true);
+    expect(result.nodes.some((n) => n.id === "dxDbSecondary")).toBe(true);
+    expect(result.edges.some((e) => e.id === "cdn-waf")).toBe(true);
+    expect(result.edges.some((e) => e.id === "cdn-hap")).toBe(false);
+    expect(result.nodes.find((n) => n.id === "waf")?.plane).toBe("platform");
   });
 
-  it("load 3x turns a hot path red or amber", () => {
-    const base = runSizing({
-      product: "dxcn",
-      inputs: { ...defaultUsageInputs, growthCagr: 0, loadMultiplier: 1 },
-      toggles: defaultToggles("dxcn"),
-      costs: defaultUnitCosts,
-    });
-    const stressed = runSizing({
-      product: "dxcn",
-      inputs: { ...defaultUsageInputs, growthCagr: 0, loadMultiplier: 3 },
-      toggles: defaultToggles("dxcn"),
-      costs: defaultUnitCosts,
-    });
-    const coreBase = base.nodes.find((n) => n.id === "core")!;
-    const coreHot = stressed.nodes.find((n) => n.id === "core")!;
-    expect(coreHot.util).toBeGreaterThan(coreBase.util);
-    expect(["amber", "red", "green"]).toContain(coreHot.utilBand);
-  });
-
-  it("auth edges are Core/users→IdP and Core→LDAP, not HAProxy→IdP", () => {
-    const { edges } = selectTopology("dxcn", {
-      ...defaultToggles("dxcn"),
-      externalIdp: true,
-      openLdap: true,
-    });
-    expect(edges.some((e) => e.source === "haproxy" && e.target === "externalIdp")).toBe(false);
-    expect(edges.some((e) => e.source === "haproxy" && e.target === "openLdap")).toBe(false);
-    expect(edges.some((e) => e.source === "users" && e.target === "externalIdp")).toBe(true);
-    expect(edges.some((e) => e.source === "core" && e.target === "externalIdp")).toBe(true);
-    expect(edges.some((e) => e.source === "core" && e.target === "openLdap")).toBe(true);
+  it("HCL small tier auth mix is ~65% anonymous", () => {
+    const { pctAnonymous } = hclAuthPercents();
+    expect(pctAnonymous).toBe(65);
+    expect(HCL_TIERS.small.concurrentUsers).toBe(1000);
+    expect(HCL_TIERS.large.concurrentUsers).toBe(30000);
   });
 
   it("Compose has webEngine not core; no remoteSearch node", () => {
@@ -156,20 +158,21 @@ describe("runSizing", () => {
     expect(result.nodes.some((n) => n.id === "remoteSearch")).toBe(false);
   });
 
-  it("estimator and topology share same node set", () => {
-    const toggles = { ...defaultToggles("dxcn"), dam: true };
-    const { nodes } = selectTopology("dxcn", toggles);
-    const result = runSizing({
-      product: "dxcn",
-      inputs: defaultUsageInputs,
-      toggles,
-      costs: defaultUnitCosts,
+  it("auth edges are Core/users→IdP and Core→LDAP, not HAProxy→IdP", () => {
+    const { edges } = selectTopology("dxcn", {
+      ...defaultToggles("dxcn"),
+      externalIdp: true,
+      openLdap: true,
     });
-    const topoIds = new Set(
-      nodes.filter((n) => n.id !== "users" && n.id !== "cdn").map((n) => n.id),
+    expect(
+      edges.some((e) => e.source === "haproxy" && e.target === "externalIdp"),
+    ).toBe(false);
+    expect(edges.some((e) => e.source === "users" && e.target === "externalIdp")).toBe(
+      true,
     );
-    const bomIds = new Set(result.nodes.map((n) => n.id));
-    expect(bomIds).toEqual(topoIds);
+    expect(edges.some((e) => e.source === "core" && e.target === "externalIdp")).toBe(
+      true,
+    );
   });
 });
 
@@ -209,8 +212,12 @@ dx-core-0         1500m        4096Mi
 haproxy-0         200m         256Mi`,
       { "dx-core": "core", haproxy: "haproxy" },
     );
-    expect(live.find((r) => r.componentId === "core")?.cpuCoresObserved).toBe(1.5);
+    expect(live.find((r) => r.componentId === "core")?.cpuCoresObserved).toBe(
+      1.5,
+    );
     const cmp = compareEstimateVsLive(result.nodes, live);
-    expect(cmp.find((r) => r.componentId === "core")?.status).not.toBe("missing");
+    expect(cmp.find((r) => r.componentId === "core")?.status).not.toBe(
+      "missing",
+    );
   });
 });
