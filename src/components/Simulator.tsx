@@ -37,67 +37,80 @@ interface Props {
   onToggles: (v: ComponentToggles) => void;
 }
 
+const NODE_W = 210;
+const NODE_H = 100;
+const GAP_X = 48;
+const GAP_Y = 56;
+const MAX_PER_ROW = 4;
+const CANVAS_PAD = 40;
+
+/** Preferred top→bottom bands; wide bands wrap into sub-rows of MAX_PER_ROW. */
+const LAYOUT_BANDS: ComponentId[][] = [
+  ["users", "dnsGslb"],
+  ["cdn", "waf", "cloudLb"],
+  ["haproxy"],
+  ["core", "webEngine"],
+  ["openLdap", "externalIdp", "iqIntegrator", "peopleService"],
+  ["externalDb", "dxDbSecondary", "redis"],
+  ["rwxStorage", "objectStorage"],
+  ["remoteSearch", "searchMiddleware", "openSearch", "fileProcessor"],
+  ["contentComposer", "ringApi", "dam"],
+  ["imageProcessor", "persistencePool", "persistenceNode", "persistenceMetrics"],
+  ["damPluginGoogleVision", "damPluginKaltura"],
+  ["loggingSidecar", "runtimeController", "licenseManager", "prereqsChecker"],
+  ["secretsKms", "observability", "backupDr", "containerRegistry", "egressNat", "mcpService"],
+];
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 function layoutNodes(
   ids: ComponentId[],
 ): Record<string, { x: number; y: number }> {
-  const layers: ComponentId[][] = [
-    ["users", "dnsGslb"],
-    ["cdn", "waf", "cloudLb"],
-    ["haproxy"],
-    ["core", "webEngine", "iqIntegrator", "openLdap", "externalIdp"],
-    [
-      "externalDb",
-      "dxDbSecondary",
-      "remoteSearch",
-      "searchMiddleware",
-      "contentComposer",
-      "ringApi",
-      "dam",
-      "mcpService",
-      "peopleService",
-      "rwxStorage",
-      "objectStorage",
-      "redis",
-    ],
-    [
-      "openSearch",
-      "fileProcessor",
-      "imageProcessor",
-      "persistencePool",
-      "loggingSidecar",
-      "runtimeController",
-      "licenseManager",
-      "secretsKms",
-      "observability",
-      "backupDr",
-      "containerRegistry",
-      "egressNat",
-    ],
-    [
-      "persistenceNode",
-      "persistenceMetrics",
-      "damPluginGoogleVision",
-      "damPluginKaltura",
-      "prereqsChecker",
-    ],
-  ];
-  const pos: Record<string, { x: number; y: number }> = {};
   const idSet = new Set(ids);
-  let y = 0;
-  for (const layer of layers) {
-    const present = layer.filter((id) => idSet.has(id));
-    present.forEach((id, i) => {
-      const span = Math.max(present.length, 1);
-      pos[id] = { x: 40 + i * 190 - (span - 1) * 20, y };
-    });
-    if (present.length) y += 130;
+  const pos: Record<string, { x: number; y: number }> = {};
+  const placed = new Set<ComponentId>();
+
+  const rows: ComponentId[][] = [];
+  for (const band of LAYOUT_BANDS) {
+    const present = band.filter((id) => idSet.has(id));
+    if (!present.length) continue;
+    for (const row of chunk(present, MAX_PER_ROW)) rows.push(row);
   }
-  let lx = 0;
+  // leftovers not in LAYOUT_BANDS
+  const leftovers = ids.filter((id) => !LAYOUT_BANDS.some((b) => b.includes(id)));
+  for (const row of chunk(leftovers, MAX_PER_ROW)) {
+    if (row.length) rows.push(row);
+  }
+
+  // Width of widest row — used to center narrower rows
+  const maxCols = Math.max(1, ...rows.map((r) => r.length));
+  const rowPitch = NODE_W + GAP_X;
+  const colPitch = NODE_H + GAP_Y;
+  const fullWidth = maxCols * NODE_W + (maxCols - 1) * GAP_X;
+
+  rows.forEach((row, rowIdx) => {
+    const rowWidth = row.length * NODE_W + (row.length - 1) * GAP_X;
+    const x0 = CANVAS_PAD + (fullWidth - rowWidth) / 2;
+    const y = CANVAS_PAD + rowIdx * colPitch;
+    row.forEach((id, i) => {
+      pos[id] = { x: x0 + i * rowPitch, y };
+      placed.add(id);
+    });
+  });
+
+  // Safety: any id still missing
+  let orphan = 0;
   for (const id of ids) {
-    if (!pos[id]) {
-      pos[id] = { x: lx * 180, y };
-      lx += 1;
-    }
+    if (placed.has(id)) continue;
+    pos[id] = {
+      x: CANVAS_PAD + (orphan % MAX_PER_ROW) * rowPitch,
+      y: CANVAS_PAD + (rows.length + Math.floor(orphan / MAX_PER_ROW)) * colPitch,
+    };
+    orphan += 1;
   }
   return pos;
 }
@@ -276,6 +289,11 @@ export function Simulator({
           edges={flowEdges}
           nodeTypes={nodeTypes}
           fitView
+          fitViewOptions={{ padding: 0.18, maxZoom: 0.95, minZoom: 0.15 }}
+          minZoom={0.15}
+          maxZoom={1.4}
+          nodesDraggable
+          nodesConnectable={false}
           onNodeClick={(_, n) => setSelected(n.id as ComponentId)}
           proOptions={{ hideAttribution: true }}
         >

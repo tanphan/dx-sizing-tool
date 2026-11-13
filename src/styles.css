@@ -367,7 +367,8 @@ table.bom th {
   border-radius: 10px;
   overflow: hidden;
   background: #0c1016;
-  min-height: 480px;
+  min-height: 640px;
+  height: min(78vh, 920px);
 }
 
 .cloud-select {
@@ -433,13 +434,15 @@ table.bom th {
 }
 
 .flow-node {
-  min-width: 150px;
-  max-width: 200px;
+  width: 200px;
+  min-height: 72px;
+  box-sizing: border-box;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-elev);
   font-size: 0.75rem;
+  overflow: hidden;
 }
 
 .flow-node.plane-hcl {
@@ -487,12 +490,18 @@ table.bom th {
 .flow-node .title {
   font-weight: 650;
   margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .flow-node .meta {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .drawer {
