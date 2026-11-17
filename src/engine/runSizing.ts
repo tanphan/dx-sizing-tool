@@ -60,10 +60,6 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   const demand = normalizeInputs(inputs, toggles, args.product);
   const warnings: string[] = [];
 
-  warnings.push(
-    `Core/webEngine use fixed HCL K8s guide pods (CF239): ${HCL_CORE_POD.cpu} CPU, ${HCL_CORE_POD.podMemoryGi}Gi (req=limit), ${HCL_CORE_POD.heapGi}Gi heap Xms=Xmx — scale out, not up`,
-  );
-
   // Pacing sanity: think time vs session math describe the same user differently.
   if (inputs.thinkTimeSec > 0 && inputs.peakRpsOverride <= 0) {
     const sessionPacing =
@@ -87,11 +83,6 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   }
   if (args.product === "dxcn" && !toggles.rwxStorage) {
     warnings.push("DXCN Core requires RWX shared storage");
-  }
-  if (capacity.confidence === "default") {
-    warnings.push(
-      "Capacity profile uses defaults — calibrate with Locust; see HCL rendering guide for 1k/30k VU anchors",
-    );
   }
   if (inputs.productionPlatform && (!toggles.waf || !toggles.cloudLb)) {
     warnings.push("Production platform expects origin WAF + Cloud LB");
