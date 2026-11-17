@@ -4,7 +4,7 @@ import { calibrateFromLocust } from "./calibrate";
 import { defaultUnitCosts, defaultUsageInputs } from "./defaults";
 import { normalizeInputs } from "./demand";
 import { HCL_CORE_POD, HCL_TIERS, hclAuthPercents } from "./hclGuidance";
-import { buildHelmHints } from "./helm";
+import { buildHelmHints, helmHintsYaml } from "./helm";
 import { compareEstimateVsLive, parseKubectlTop } from "./liveCompare";
 import { loadProfile } from "./profiles";
 import { runSizing } from "./runSizing";
@@ -29,25 +29,84 @@ describe("normalizeInputs", () => {
     expect(demand.concurrentSessions).toBe(5000);
   });
 
-  it("fans search/DAM from attach rates", () => {
+  it("splits front door into pages vs DAM from attach rates", () => {
+    // DAM asset requests are part of the front-door total (not added on top):
+    // share = a·n / (1 + a·n) = 0.3 / 1.3
     const demand = normalizeInputs(
       {
         ...defaultUsageInputs,
         growthCagr: 0,
         cacheHitRatio: 0,
+        damCacheHitRatio: 0,
         searchAttachRate: 0.4,
         searchesPerHit: 1.5,
         damAttachRate: 0.1,
         assetsPerPage: 3,
-        peakRpsOverride: 100,
+        peakRpsOverride: 130,
       },
       { ...defaultToggles("dxcn"), dam: true, remoteSearch: true },
       "dxcn",
     );
-    expect(demand.portalRps).toBe(100);
-    expect(demand.searchRps).toBeCloseTo(60, 5);
+    expect(demand.portalRps).toBeCloseTo(100, 5);
     expect(demand.damRps).toBeCloseTo(30, 5);
+    expect(demand.originRps).toBeCloseTo(130, 5);
+    expect(demand.searchRps).toBeCloseTo(60, 5);
     expect(demand.imageRps).toBeCloseTo(6, 5);
+  });
+
+  it("applies growth × load multiplier once (not squared)", () => {
+    const base = {
+      ...defaultUsageInputs,
+      growthCagr: 0,
+      loadMultiplier: 1,
+      peakRpsOverride: 0,
+      thinkTimeSec: 0,
+    };
+    const d1 = normalizeInputs(base, defaultToggles("dxcn"), "dxcn");
+    const d2 = normalizeInputs({ ...base, loadMultiplier: 2 }, defaultToggles("dxcn"), "dxcn");
+    const dg = normalizeInputs({ ...base, growthCagr: 0.15 }, defaultToggles("dxcn"), "dxcn");
+    const dov = normalizeInputs(
+      { ...base, peakRpsOverride: 100, loadMultiplier: 2 },
+      defaultToggles("dxcn"),
+      "dxcn",
+    );
+    expect(d2.frontDoorRps / d1.frontDoorRps).toBeCloseTo(2, 6);
+    expect(dg.frontDoorRps / d1.frontDoorRps).toBeCloseTo(1.15, 6);
+    expect(dov.frontDoorRps).toBeCloseTo(200, 6);
+  });
+
+  it("think time > 0 paces RPS as users ÷ think time", () => {
+    const d = normalizeInputs(
+      { ...defaultUsageInputs, growthCagr: 0, peakConcurrentUsers: 1000, thinkTimeSec: 2 },
+      defaultToggles("compose"),
+      "compose",
+    );
+    expect(d.frontDoorRps).toBeCloseTo(500, 6);
+    expect(d.pacingSource).toBe("thinkTime");
+    const s = normalizeInputs(
+      { ...defaultUsageInputs, growthCagr: 0, thinkTimeSec: 0 },
+      defaultToggles("compose"),
+      "compose",
+    );
+    expect(s.pacingSource).toBe("session");
+  });
+
+  it("DAM request share + separate DAM cache ratio", () => {
+    const d = normalizeInputs(
+      {
+        ...defaultUsageInputs,
+        growthCagr: 0,
+        peakRpsOverride: 1000,
+        damRequestShare: 0.3,
+        cacheHitRatio: 0.5,
+        damCacheHitRatio: 0.9,
+      },
+      { ...defaultToggles("compose"), dam: true },
+      "compose",
+    );
+    expect(d.damFrontDoorRps).toBeCloseTo(300, 6);
+    expect(d.portalRps).toBeCloseTo(350, 6); // 700 × 0.5
+    expect(d.damRps).toBeCloseTo(30, 6); // 300 × 0.1
   });
 
   it("computes IQ tokens when enabled", () => {
@@ -158,6 +217,75 @@ describe("runSizing", () => {
     expect(result.nodes.some((n) => n.id === "remoteSearch")).toBe(false);
   });
 
+  it("Core/webEngine pods never exceed the HCL pod shape — scale out instead", () => {
+    for (const product of ["dxcn", "compose"] as const) {
+      const result = runSizing({
+        product,
+        inputs: { ...defaultUsageInputs, peakConcurrentUsers: 30000, thinkTimeSec: 2 },
+        toggles: defaultToggles(product),
+        costs: defaultUnitCosts,
+      });
+      const id = product === "dxcn" ? "core" : "webEngine";
+      const n = result.nodes.find((x) => x.id === id)!;
+      expect(n.cpuCores / n.replicas).toBeCloseTo(HCL_CORE_POD.cpu, 6);
+      expect(n.memGi / n.replicas).toBeCloseTo(HCL_CORE_POD.podMemoryGi, 6);
+    }
+  });
+
+  it("session heap drives Core replicas when sessions are large", () => {
+    const result = runSizing({
+      product: "dxcn",
+      inputs: {
+        ...defaultUsageInputs,
+        growthCagr: 0,
+        peakConcurrentUsers: 20000,
+        peakRpsOverride: 10, // negligible CPU, so heap must be the driver
+        sessionBytesKb: 500,
+      },
+      toggles: defaultToggles("dxcn"),
+      costs: defaultUnitCosts,
+    });
+    const core = result.nodes.find((n) => n.id === "core")!;
+    // 20000 × 500KB × 1.3 ≈ 12.4Gi ÷ (4Gi heap × 0.5) → 7 pods
+    expect(core.replicas).toBe(7);
+    expect(core.notes.some((s) => s.includes("session heap"))).toBe(true);
+  });
+
+  it("DAM is routed HAProxy → DAM and HAProxy carries DAM load", () => {
+    const result = runSizing({
+      product: "compose",
+      inputs: { ...defaultUsageInputs, damRequestShare: 0.3 },
+      toggles: { ...defaultToggles("compose"), dam: true },
+      costs: defaultUnitCosts,
+    });
+    const dam = result.nodes.find((n) => n.id === "dam")!;
+    const hap = result.nodes.find((n) => n.id === "haproxy")!;
+    const we = result.nodes.find((n) => n.id === "webEngine")!;
+    expect(result.edges.some((e) => e.id === "hap-dam")).toBe(true);
+    expect(result.edges.some((e) => e.source === "webEngine" && e.target === "dam")).toBe(false);
+    expect(hap.offeredRps).toBeCloseTo(we.offeredRps + dam.offeredRps, 6);
+  });
+
+  it("edge RPS matches target node offered RPS", () => {
+    const result = runSizing({
+      product: "compose",
+      inputs: defaultUsageInputs,
+      toggles: {
+        ...defaultToggles("compose"),
+        dam: true,
+        searchMiddleware: true,
+        openLdap: true,
+      },
+      costs: defaultUnitCosts,
+    });
+    const offered = new Map(result.nodes.map((n) => [n.id, n.offeredRps]));
+    for (const id of ["hap-we", "hap-dam", "smw-fp", "smw-os", "dam-pool", "pool-node"]) {
+      const e = result.edges.find((x) => x.id === id)!;
+      expect(e, id).toBeDefined();
+      expect(e.rps, id).toBeCloseTo(offered.get(e.target)!, 6);
+    }
+  });
+
   it("auth edges are Core/users→IdP and Core→LDAP, not HAProxy→IdP", () => {
     const { edges } = selectTopology("dxcn", {
       ...defaultToggles("dxcn"),
@@ -177,26 +305,37 @@ describe("runSizing", () => {
 });
 
 describe("calibrate + helm + live", () => {
-  it("calibrates rpsPerReplica from Locust", () => {
+  it("calibrates rpsPerReplica and a non-zero cpuPerRps from Locust", () => {
     const base = loadProfile("dxcn-cf238");
     const { profile, notes } = calibrateFromLocust(base, [
       { componentId: "core", rps: 140, cpuCores: 6, replicas: 2, util: 0.7 },
     ]);
     expect(profile.confidence).toBe("lab-calibrated");
     expect(profile.components.core.rpsPerReplica).toBe(100);
+    // (6/2 − cpuBase 2) / 70 rps — was 0 when the 5.6 pod floor was folded into cpuBase
+    expect(profile.components.core.cpuPerRps).toBeCloseTo(1 / 70, 5);
     expect(notes.length).toBe(1);
   });
 
-  it("builds helm hints", () => {
+  it("builds helm hints with chart key paths and req == limit", () => {
     const result = runSizing({
       product: "dxcn",
       inputs: defaultUsageInputs,
-      toggles: defaultToggles("dxcn"),
+      toggles: { ...defaultToggles("dxcn"), dam: true },
       costs: defaultUnitCosts,
     });
     const hints = buildHelmHints(result.nodes);
     expect(hints.scaling.core).toBeGreaterThanOrEqual(2);
-    expect(hints.resources.core.limits.memory).toMatch(/Gi|Mi/);
+    expect(hints.resources.core.limits).toEqual({ cpu: "5.6", memory: "8Gi" });
+    expect(hints.resources.core.requests).toEqual(hints.resources.core.limits);
+    expect(hints.resources.digitalAssetManagement).toBeDefined();
+    expect(hints.scaling.persistenceConnectionPool).toBeGreaterThanOrEqual(1);
+    // openLdap / remoteSearch have resources but no scaling.replicas key in the chart
+    expect(hints.scaling.remoteSearch).toBeUndefined();
+    const yaml = helmHintsYaml(hints);
+    expect(yaml).toMatch(/^scaling:\n {2}replicas:\n {4}/m);
+    expect(yaml).not.toMatch(/applications\./);
+    expect(yaml).toMatch(/-Xmx4g/);
   });
 
   it("parses kubectl top and compares", () => {

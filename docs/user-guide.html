@@ -155,13 +155,26 @@
     <div><strong>App path:</strong> <span class="mono">DXAutomation/dx-sizing-tool</span></div>
     <div><strong>Run:</strong> <span class="mono">npm run dev</span> → http://127.0.0.1:5173/</div>
     <div><strong>Profiles:</strong> dxcn-cf238 · compose-cf237</div>
+    <div><strong>Hosted:</strong> <span class="mono">tanphan.github.io/dx-sizing-tool</span></div>
     <div><strong>Version:</strong> 0.1.0</div>
+    <div><strong>Guide updated:</strong> 17 Nov 2026</div>
   </div>
 
   <div class="callout danger">
     <strong>Disclaimer.</strong> This is an estimation aid for lab and planning use.
     It is <em>not</em> an HCL official SCU, sizing guarantee, or license quote.
     Calibrate capacity profiles on your own environment before production decisions.
+  </div>
+
+  <div class="callout warn">
+    <strong>What changed on 17 Nov 2026.</strong> Results differ from earlier versions:
+    <ul style="margin:6px 0 0">
+      <li>Load multiplier and growth are applied once. Earlier versions applied them twice, so a 2× load showed 4× RPS.</li>
+      <li>Think time above 0 now sets the request rate. The default is 0, which keeps the session-based rate.</li>
+      <li>DAM assets go HAProxy → DAM, are counted inside requests per session, and have their own cache hit ratio.</li>
+      <li>Core / webEngine pods are fixed at the HCL size (5.6 CPU, 8Gi). The tool adds replicas for CPU or session heap instead of growing pods.</li>
+      <li>The Helm export uses the chart's real key paths, with requests equal to limits.</li>
+    </ul>
   </div>
 
   <h2>1. Contents</h2>
@@ -226,6 +239,8 @@ npm run build     # production bundle → dist/</pre>
   <table>
     <tr><th></th><th>DXCN</th><th>DX Compose</th></tr>
     <tr><td>Portal runtime</td><td>DX Core</td><td>Web Engine</td></tr>
+    <tr><td>Default profile</td><td><span class="mono">dxcn-cf238</span></td><td><span class="mono">compose-cf237</span></td></tr>
+    <tr><td>RWX shared storage</td><td>Always (Core shared file system)</td><td>Only when DAM is on</td></tr>
     <tr><td>Classic Remote Search</td><td>Optional</td><td>Not available (toggle forced off)</td></tr>
     <tr><td>Search V2 (MW + OpenSearch + file processor)</td><td>Optional</td><td>Optional (common on labs)</td></tr>
     <tr><td>Always-on</td><td colspan="2">HAProxy, logging sidecar, runtime controller, prereqs (job-only), external DB</td></tr>
@@ -240,6 +255,15 @@ npm run build     # production bundle → dist/</pre>
     The browser redirects to the IdP; Core / webEngine call the IdP back-channel (token, JWKS, etc.).
     OpenLDAP binds are also Core/webEngine → LDAP directly. ACS/callback traffic returns as normal portal RPS through HAProxy.
   </div>
+  <div class="callout">
+    <strong>DAM routing.</strong> Browsers fetch assets (<span class="mono">/dx/api/dam/…</span>) through HAProxy straight to DAM.
+    They do not pass through Core / webEngine. HAProxy and the origin WAF / load balancer carry both page and DAM traffic.
+  </div>
+  <div class="callout">
+    <strong>Cloud &amp; production.</strong> The sidebar picks a cloud provider (AWS EKS, Azure AKS, Google GKE, Red Hat OpenShift), which adjusts unit costs and labels platform SKUs.
+    <em>Production platform</em> adds the origin WAF, cloud load balancer, DB secondary, secrets/KMS, observability, backup/DR, registry and egress NAT.
+    Traffic then flows CDN miss → WAF → cloud LB → HAProxy.
+  </div>
 
   <div class="page-break"></div>
 
@@ -249,26 +273,36 @@ npm run build     # production bundle → dist/</pre>
     <tr><th>Input</th><th>Why it matters</th></tr>
     <tr><td>Peak concurrent users</td><td>Session memory + derived RPS</td></tr>
     <tr><td>DAU / MAU</td><td>Sessions/day, storage &amp; token projections</td></tr>
-    <tr><td>Peak RPS override</td><td>If &gt; 0, replaces derived front-door RPS</td></tr>
-    <tr><td>Req / session &amp; session duration</td><td><span class="mono">RPS ≈ U_peak × req / (T_min × 60)</span></td></tr>
-    <tr><td>% anonymous / authenticated</td><td>Login share → LDAP binds / IdP browser redirect + Core back-channel (not HAProxy→IdP)</td></tr>
-    <tr><td>% browse / author / form</td><td>WCM vs authoring vs write load</td></tr>
-    <tr><td>Search / DAM attach rates</td><td>Fan-out to search &amp; DAM paths</td></tr>
-    <tr><td>Assets / page</td><td>DAM RPS multiplier</td></tr>
+    <tr><td>Peak RPS override</td><td>If &gt; 0, replaces derived front-door RPS (still scaled by load multiplier × growth)</td></tr>
+    <tr><td>Req / session &amp; session duration</td><td><span class="mono">RPS ≈ U_peak × req / (T_min × 60)</span> when think time is 0. Counts <em>all</em> HTTP requests, DAM assets included.</td></tr>
+    <tr><td>% authenticated</td><td>Login share → LDAP binds / IdP browser redirect + Core back-channel (not HAProxy→IdP). % anonymous is shown for reference only.</td></tr>
+    <tr><td>% browse / author</td><td>Browse share sets DB load; author share sets Content Composer load. % form-post is exported to the Locust mix but does not change sizing.</td></tr>
+    <tr><td>Search attach rate</td><td>Fan-out to the search path</td></tr>
+    <tr><td>DAM request share</td><td>Fraction of all requests that are DAM assets (0–1). The HCL rendering mix uses 0.3. Leave at 0 to derive it from attach rate × assets/page.</td></tr>
+    <tr><td>DAM attach rate &amp; assets / page</td><td>Used only when DAM request share is 0: share = a·n / (1 + a·n)</td></tr>
     <tr><td>AZ count</td><td>HA replica floor</td></tr>
-    <tr><td>Target p95 (ms)</td><td>Documented SLO (headroom context)</td></tr>
-    <tr><td>Cache hit ratio</td><td>Largest lever — reduces portal RPS after CDN</td></tr>
+    <tr><td>Target p95 (ms)</td><td>For reference; not used in the sizing math yet</td></tr>
+    <tr><td>DAM cache hit ratio</td><td>CDN / DAM proxy hits for assets. Assets usually cache far better than pages.</td></tr>
+    <tr><td>Page cache hit ratio</td><td>Largest lever on Core / webEngine RPS</td></tr>
   </table>
 
   <h3>6.2 Advanced</h3>
   <p>
-    Think time, searches/hit, peak authoring users, uploads/day &amp; avg MB, content items (index GB),
+    Searches/hit, peak authoring users, uploads/day &amp; avg MB, content items (index GB),
     IQ attach / msgs / tokens in+out, growth CAGR, session footprint KB.
+  </p>
+  <p>
+    <strong>Think time (sec).</strong> When above 0, the request rate is <span class="mono">U_peak ÷ think time</span>.
+    This is how a Locust virtual user behaves (<span class="mono">wait_time</span>); for <span class="mono">between(1, 3)</span> use 2.
+    Use it when your users figure comes from a load test. Leave it at 0 for real visitors, who are paced by requests per session.
+    The Estimator warns when the two methods differ by more than 2×.
   </p>
 
   <h3>6.3 Scenario presets</h3>
   <table>
     <tr><th>Preset</th><th>Effect</th></tr>
+    <tr><td>HCL Small (1k VU)</td><td>HCL CF239 rendering mix (WCM 40% / pages 30% / DAM 30%), 1,000 users, DAM request share 0.3, DAM + OpenLDAP on, production platform on</td></tr>
+    <tr><td>HCL Large (30k VU)</td><td>Same mix at 30,000 users, 0.5 page cache hit ratio</td></tr>
     <tr><td>Anonymous browse</td><td>Mostly anon portal traffic, light search/DAM</td></tr>
     <tr><td>Login + WCM</td><td>Authenticated mix with form posts</td></tr>
     <tr><td>Authoring</td><td>Raises author %, enables Content Composer + Ring</td></tr>
@@ -293,8 +327,19 @@ npm run build     # production bundle → dist/</pre>
       <span class="band a"></span>amber 70–90% ·
       <span class="band r"></span>red &gt;90%.
     </li>
-    <li><strong>Warnings</strong> — default-profile confidence, CDN miss=0, bottlenecks, Compose Remote Search ignored, etc.</li>
+    <li><strong>Warnings</strong> — default-profile confidence, CDN miss=0, bottlenecks, Compose Remote Search ignored, think time vs session pacing mismatch, etc.</li>
   </ul>
+  <div class="callout">
+    <strong>Core / webEngine pods.</strong> Each pod is sized at the HCL K8s guide shape: 5.6 CPU, 8Gi memory (request = limit), 4Gi heap with Xms = Xmx.
+    Replicas are the largest of four numbers:
+    <ul style="margin:6px 0 0">
+      <li>RPS ÷ rpsPerReplica</li>
+      <li>The HA / AZ floor</li>
+      <li>The pods needed for CPU (idle CPU + cpuPerRps × RPS must fit within 5.6 per pod)</li>
+      <li>The pods needed for session heap (session memory must fit within 50% of the 4Gi heap per pod)</li>
+    </ul>
+    The node notes show estimated CPU and heap used per pod. The 50% heap share and the 30% session-memory safety factor are tool assumptions, not HCL figures.
+  </div>
 
   <h2 id="simulator">8. Simulator</h2>
   <ol>
@@ -332,7 +377,10 @@ npm run build     # production bundle → dist/</pre>
   </ol>
   <p>
     Patch formula (approx): <span class="mono">rpsPerReplica ≈ observed_rps / replicas / util</span>;
-    <span class="mono">cpuPerRps</span> derived from measured CPU above base.
+    <span class="mono">cpuPerRps ≈ (cpuCores / replicas − cpuBase) / (rps / replicas)</span>.
+    <span class="mono">cpuBase</span> is the profile's idle CPU (2 for Core), not the 5.6 CPU pod size.
+    With the sample above, Core gets <span class="mono">rpsPerReplica 100</span> and <span class="mono">cpuPerRps ≈ 0.0143</span>.
+    Memory is not calibrated.
   </p>
 
   <h2 id="live">10. Live vs estimate</h2>
@@ -348,28 +396,62 @@ npm run build     # production bundle → dist/</pre>
     <tr><th>Export</th><th>Where</th><th>Use</th></tr>
     <tr><td>JSON</td><td>Estimator</td><td>Full sizing result (demand, nodes, costs, helmHints)</td></tr>
     <tr><td>CSV</td><td>Estimator</td><td>BOM spreadsheet</td></tr>
-    <tr><td>Helm resource hints</td><td>Estimator / Calibrate</td><td>YAML-ish <span class="mono">scaling</span> + <span class="mono">resources</span> requests/limits — starting point only</td></tr>
+    <tr><td>Helm values overlay</td><td>Estimator / Calibrate</td><td>Values for <span class="mono">hcl-dx-deployment</span>; review before <span class="mono">helm upgrade -f</span></td></tr>
     <tr><td>Copy Helm hints</td><td>Estimator</td><td>Clipboard</td></tr>
     <tr><td>Locust scenario mix</td><td>Calibrate</td><td>Task-weight JSON for AIOps Locust</td></tr>
   </table>
+  <p>The Helm overlay follows the chart's own layout (checked against CF233 and CF237):</p>
+  <pre># NOTE: Core/webEngine JVM: -Xms4g -Xmx4g per HCL guide. ...
+scaling:
+  replicas:
+    core: 2
+    digitalAssetManagement: 2
+resources:
+  core:
+    requests:
+      cpu: "5.6"
+      memory: "8Gi"
+    limits:
+      cpu: "5.6"
+      memory: "8Gi"</pre>
+  <ul>
+    <li>Names are the chart's: <span class="mono">digitalAssetManagement</span>, <span class="mono">persistenceConnectionPool</span>, <span class="mono">persistenceMetricsExporter</span>, and so on.</li>
+    <li>Requests equal limits for CPU and memory, as in the chart defaults and the HCL guide.</li>
+    <li><span class="mono">scaling.replicas</span> only lists components the chart can scale. OpenLDAP and Remote Search get resources only.</li>
+    <li>Search V2, DX IQ and People Service are separate charts, so they appear as comments to copy into their own values.</li>
+    <li>The heap is not set by the chart values (the CF237 webEngine template sets <span class="mono">-Xms2560m</span> with no <span class="mono">-Xmx</span>), so set it explicitly.</li>
+    <li>Example values above are illustrative; your numbers come from your inputs.</li>
+  </ul>
 
   <h2 id="formulas">12. How the math works (short)</h2>
-  <pre>frontDoorRps = peakRpsOverride OR (U_peak × req_per_session / (T_session_min × 60))
-               × loadMultiplier × (1 + CAGR)
+  <pre>scale        = loadMultiplier × (1 + CAGR)              (applied once)
+U_peak       = peakConcurrentUsers × scale
+pacing       = thinkTime            if thinkTime &gt; 0
+             = T_session_min × 60 / req_per_session     otherwise
+frontDoorRps = peakRpsOverride × scale                  if override &gt; 0
+             = U_peak / pacing                          otherwise
 
-portalRps    = frontDoorRps × (1 − cacheHitRatio)
+damShare     = damRequestShare  OR  a·n / (1 + a·n)     (a = damAttach, n = assetsPerPage; 0 if DAM off)
+damRps       = frontDoorRps × damShare × (1 − damCacheHitRatio)      HAProxy → DAM
+portalRps    = frontDoorRps × (1 − damShare) × (1 − cacheHitRatio)  HAProxy → Core/webEngine
+originRps    = portalRps + damRps                       (WAF / LB / HAProxy; HAProxy also carries IQ)
 
 searchRps    = portalRps × searchAttach × searchesPerHit   (if search enabled)
-damRps       = portalRps × damAttach × assetsPerPage       (if DAM enabled)
 imageRps     = 0.2 × damRps
 iqRps        = U_peak × iqAttach × msgs / sessionSec       (own traffic class)
 
 replicas     = max( ceil(offeredRps / rpsPerReplica), haMin, azCount, minReplicas )
 util         = offeredRps / (replicas × rpsPerReplica)
 
-mem_sessions (Core/webEngine) = U_peak × sessionBytes × 1.3 safety
+Core/webEngine (pod fixed at 5.6 CPU / 8Gi, heap 4Gi):
+  cpuReplicas  = ceil( cpuPerRps × RPS / (5.6 − cpuBase) )
+  sessionHeap  = U_peak × sessionBytes × 1.3
+  heapReplicas = ceil( sessionHeap / (4Gi × 0.5) )
+  replicas     = max( replicas, cpuReplicas, heapReplicas )
+
 tokens/mo    = sessions/day × 30 × iqAttach × msgs × (tok_in + tok_out)
 DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
+  <p>Edge labels in the Simulator show the same absolute RPS as the node they point to.</p>
   <p>
     Capacity constants live in <span class="mono">src/profiles/dxcn-cf238.json</span> and
     <span class="mono">src/profiles/compose-cf237.json</span>
@@ -383,7 +465,8 @@ DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
   <ol>
     <li>Select <strong>DXCN</strong>. Leave defaults (or set peak users = 5000, search attach = 0.4, DAM attach = 0.1).</li>
     <li>Enable <strong>Remote Search</strong> and <strong>DAM</strong> (DAM auto-enables Ring + image + persistence).</li>
-    <li>Estimator shows Core ≥ 2 replicas (HA floor), Remote Search and DAM sized from fan-out RPS, separate infra vs license totals.</li>
+    <li>The Estimator shows Core at ≥ 2 replicas of 5.6 CPU / 8Gi each (HA floor). DAM is sized from its share of requests after the DAM cache, and Remote Search from fan-out RPS. Infra and license totals are shown separately.</li>
+    <li>In the Simulator, DAM hangs off HAProxy (<span class="mono">assets /dx/api/dam</span>), not off Core.</li>
     <li>Open Simulator → slide load to <strong>3×</strong>. Expect Core (and possibly search/DAM) to move amber/red.</li>
     <li>Click the red node → <strong>Add replica</strong> until util drops under 70%, or raise cache hit / lower attach rates.</li>
   </ol>
@@ -394,7 +477,10 @@ DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
     <tr><td>npm can’t find package.json</td><td>Run from <span class="mono">dx-sizing-tool/</span>, not the repo root</td></tr>
     <tr><td>Remote Search on Compose</td><td>Expected — Compose forces it off; use Search V2</td></tr>
     <tr><td>Always 2+ Core/webEngine replicas</td><td>HA/AZ floor by design (never recommend 1 for prod)</td></tr>
-    <tr><td>Huge portal RPS</td><td>Raise cache hit ratio; or set peak RPS override explicitly</td></tr>
+    <tr><td>Huge portal RPS</td><td>Check think time: a value above 0 models load-test users, which send far more requests than real visitors. Otherwise raise the page cache hit ratio or set a peak RPS override.</td></tr>
+    <tr><td>Lower RPS than an older version</td><td>Expected. Earlier versions applied load multiplier and growth twice.</td></tr>
+    <tr><td>Core / webEngine always exactly 5.6 CPU / 8Gi per pod</td><td>By design (HCL pod shape). Load shows up as more replicas; see the node notes for which limit drove the count.</td></tr>
+    <tr><td>Saved inputs lack the new DAM fields</td><td>The DAM cache hit ratio falls back to the page ratio and request share to 0. Set them in the sidebar, or clear saved state.</td></tr>
     <tr><td>Live compare all “missing”</td><td>Pod names don’t match map — rename needles or include <span class="mono">core</span>/<span class="mono">haproxy</span>/<span class="mono">dam</span> substrings</td></tr>
     <tr><td>Stale UI state</td><td>Clear <span class="mono">localStorage</span> key <span class="mono">dx-sizing-tool-v1</span></td></tr>
   </table>

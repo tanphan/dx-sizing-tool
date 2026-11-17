@@ -138,7 +138,7 @@ export const composeCatalog: ProductCatalog = {
       ratioKey: "fixed",
       label: "index jobs",
     },
-    { id: "we-dam", source: "webEngine", target: "dam", ratioKey: "dam", label: "assets" },
+    { id: "hap-dam", source: "haproxy", target: "dam", ratioKey: "dam", label: "assets /dx/api/dam" },
     { id: "we-ring", source: "webEngine", target: "ringApi", ratioKey: "ring", label: "ring" },
     {
       id: "we-cc",

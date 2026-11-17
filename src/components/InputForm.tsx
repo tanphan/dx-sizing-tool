@@ -257,8 +257,21 @@ export function InputForm({
           />
         </Field>
         <Field
+          label="DAM request share"
+          hint="Fraction of all requests that are DAM assets (0–1); HCL mix = 0.3. 0 = derive from attach rate × assets/page"
+        >
+          <input
+            type="number"
+            step="0.05"
+            min={0}
+            max={0.95}
+            value={inputs.damRequestShare ?? 0}
+            onChange={num(inputs, "damRequestShare", onInputs)}
+          />
+        </Field>
+        <Field
           label="DAM attach rate"
-          hint="Fraction of portal requests that hit DAM APIs (0–1)"
+          hint="Fraction of page views that load DAM assets (0–1); used when request share = 0"
         >
           <input
             type="number"
@@ -294,8 +307,21 @@ export function InputForm({
           />
         </Field>
         <Field
-          label="Cache hit ratio"
-          hint="CDN/portal cache hits (0–1); largest lever on Core RPS"
+          label="DAM cache hit ratio"
+          hint="CDN / DAM proxy hits for assets (0–1); assets usually cache far better than pages"
+        >
+          <input
+            type="number"
+            step="0.05"
+            min={0}
+            max={1}
+            value={inputs.damCacheHitRatio ?? inputs.cacheHitRatio}
+            onChange={num(inputs, "damCacheHitRatio", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Page cache hit ratio"
+          hint="CDN cache hits for pages (0–1); largest lever on Core RPS"
         >
           <input
             type="number"
@@ -312,7 +338,7 @@ export function InputForm({
         <summary>Advanced metrics</summary>
         <Field
           label="Think time (sec)"
-          hint="Idle between clicks — realism for concurrent→RPS (informational)"
+          hint="Seconds between requests per user (Locust wait_time). > 0 drives RPS = users ÷ think time; 0 = use requests/session ÷ session length"
         >
           <input
             type="number"

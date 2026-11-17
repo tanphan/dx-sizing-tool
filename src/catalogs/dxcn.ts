@@ -147,7 +147,7 @@ export const dxcnCatalog: ProductCatalog = {
       ratioKey: "fixed",
       label: "index jobs",
     },
-    { id: "core-dam", source: "core", target: "dam", ratioKey: "dam", label: "assets" },
+    { id: "hap-dam", source: "haproxy", target: "dam", ratioKey: "dam", label: "assets /dx/api/dam" },
     { id: "core-ring", source: "core", target: "ringApi", ratioKey: "ring", label: "ring" },
     {
       id: "core-cc",

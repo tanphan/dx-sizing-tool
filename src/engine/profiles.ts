@@ -2,24 +2,19 @@ import type { CapacityProfile, ComponentProfile, Product } from "./types";
 import composeCf237 from "../profiles/compose-cf237.json";
 import dxcnCf238 from "../profiles/dxcn-cf238.json";
 import platformComponents from "../profiles/platform-components.json";
-import { HCL_CORE_POD } from "./hclGuidance";
-
+/**
+ * Merge platform components into a product profile.
+ *
+ * Core/webEngine cpuBase/memBaseGi stay as *demand* (what the JVM uses at idle).
+ * The HCL pod size (5.6 CPU / 8Gi) is applied as an allocation in sizeNode, so
+ * per-RPS CPU is measured against pod headroom and calibration (which subtracts
+ * cpuBase) yields a non-zero cpuPerRps.
+ */
 function withPlatformAndHclFloors(raw: CapacityProfile): CapacityProfile {
   const components: CapacityProfile["components"] = {
     ...(platformComponents as CapacityProfile["components"]),
     ...raw.components,
   };
-
-  // Align Core / webEngine with HCL Compose K8s sizing guide pod floors
-  for (const id of ["core", "webEngine"] as const) {
-    if (components[id]) {
-      components[id] = {
-        ...components[id],
-        cpuBase: Math.max(components[id].cpuBase, HCL_CORE_POD.cpu),
-        memBaseGi: Math.max(components[id].memBaseGi, HCL_CORE_POD.podMemoryGi),
-      };
-    }
-  }
 
   // externalDb label as primary
   if (components.externalDb) {

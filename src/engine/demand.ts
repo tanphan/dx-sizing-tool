@@ -6,26 +6,46 @@ export function normalizeInputs(
   product: Product = "dxcn",
 ): Demand {
   const growth = 1 + Math.max(0, raw.growthCagr);
-  const uPeak = raw.peakConcurrentUsers * growth * raw.loadMultiplier;
+  // Scale factor applied exactly once (previously applied twice to derived RPS).
+  const scale = growth * raw.loadMultiplier;
+  const uPeak = raw.peakConcurrentUsers * scale;
   const sessionSec = Math.max(1, raw.sessionDurationMin * 60);
-  const derivedRps = (uPeak * raw.reqPerSession) / sessionSec;
-  const frontDoorRps =
-    (raw.peakRpsOverride > 0 ? raw.peakRpsOverride : derivedRps) *
-    raw.loadMultiplier *
-    growth;
 
-  const miss = Math.max(0, Math.min(1, 1 - raw.cacheHitRatio));
+  // Pacing: seconds between requests per concurrent user.
+  // thinkTimeSec > 0 → closed-loop VU model (Locust `wait_time`), conservative
+  // because it ignores response time. Otherwise spread reqPerSession over the session.
+  const sessionPacingSec = sessionSec / Math.max(1, raw.reqPerSession);
+  const useThink = raw.thinkTimeSec > 0;
+  const pacingSec = useThink ? raw.thinkTimeSec : sessionPacingSec;
+  const derivedRps = uPeak / pacingSec;
+  const overridden = raw.peakRpsOverride > 0;
+  const frontDoorRps = overridden ? raw.peakRpsOverride * scale : derivedRps;
+
+  // Split front door into page vs DAM asset requests. DAM assets are routed
+  // HAProxy → DAM directly (/dx/api/dam/...), not through Core/webEngine,
+  // and are cached separately from pages.
+  const damOn = !!toggles.dam;
+  const attachAssets = Math.max(0, raw.damAttachRate * raw.assetsPerPage);
+  const damShare = !damOn
+    ? 0
+    : raw.damRequestShare > 0
+      ? Math.min(0.95, raw.damRequestShare)
+      : attachAssets / (1 + attachAssets);
+  const damFrontDoorRps = frontDoorRps * damShare;
+  const pageFrontDoorRps = frontDoorRps - damFrontDoorRps;
+
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const pageMiss = 1 - clamp01(raw.cacheHitRatio);
+  const damMiss = 1 - clamp01(raw.damCacheHitRatio);
+  const portalRps = pageFrontDoorRps * pageMiss;
+  const damRps = damFrontDoorRps * damMiss;
   /** Origin RPS after CDN (hits WAF when production platform on) */
-  const originRps = frontDoorRps * miss;
-  const portalRps = originRps;
+  const originRps = portalRps + damRps;
+
   const dbRps = portalRps * (0.35 + 0.25 * (raw.pctBrowse / 100));
   const searchOn = !!(toggles.remoteSearch || toggles.searchMiddleware);
   const searchRps = searchOn
     ? portalRps * raw.searchAttachRate * raw.searchesPerHit
-    : 0;
-  const damOn = !!toggles.dam;
-  const damRps = damOn
-    ? portalRps * raw.damAttachRate * raw.assetsPerPage
     : 0;
   const imageRps = damOn ? damRps * 0.2 : 0;
   const persistRps = damOn ? damRps : 0;
@@ -79,6 +99,10 @@ export function normalizeInputs(
 
   return {
     frontDoorRps,
+    pageFrontDoorRps,
+    damFrontDoorRps,
+    pacingSec,
+    pacingSource: overridden ? "override" : useThink ? "thinkTime" : "session",
     portalRps,
     originRps,
     dbRps,

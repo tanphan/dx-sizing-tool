@@ -7,7 +7,8 @@ export const defaultUsageInputs: UsageInputs = {
   peakRpsOverride: 0,
   reqPerSession: 25,
   sessionDurationMin: 20,
-  thinkTimeSec: 8,
+  /** 0 = pace from reqPerSession / sessionDuration; > 0 = Locust-style VU pacing */
+  thinkTimeSec: 0,
   pctAnonymous: 60,
   pctAuthenticated: 40,
   pctBrowse: 75,
@@ -23,6 +24,8 @@ export const defaultUsageInputs: UsageInputs = {
   damRetentionFactor: 1.2,
   contentItems: 50000,
   cacheHitRatio: 0.4,
+  damRequestShare: 0,
+  damCacheHitRatio: 0.4,
   iqAttachRate: 0,
   iqMsgsPerSession: 4,
   iqTokensIn: 800,

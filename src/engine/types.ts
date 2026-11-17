@@ -80,7 +80,15 @@ export interface UsageInputs {
   avgUploadMb: number;
   damRetentionFactor: number;
   contentItems: number;
+  /** Page/portal cache hit ratio at CDN (0–1) */
   cacheHitRatio: number;
+  /**
+   * Fraction of front-door requests that are DAM asset requests (0–1).
+   * 0 = derive from damAttachRate × assetsPerPage. HCL rendering mix uses 0.3.
+   */
+  damRequestShare: number;
+  /** DAM asset cache hit ratio at CDN / DAM proxy (0–1); assets cache far better than pages */
+  damCacheHitRatio: number;
   iqAttachRate: number;
   iqMsgsPerSession: number;
   iqTokensIn: number;
@@ -172,6 +180,14 @@ export type ComponentToggles = Partial<Record<ComponentToggleKey, boolean>>;
 
 export interface Demand {
   frontDoorRps: number;
+  /** Front-door requests that are pages/portal (pre-cache) */
+  pageFrontDoorRps: number;
+  /** Front-door requests that are DAM assets (pre-cache) */
+  damFrontDoorRps: number;
+  /** Seconds between requests per concurrent user actually used */
+  pacingSec: number;
+  pacingSource: "thinkTime" | "session" | "override";
+  /** Page/portal origin RPS (after cache) → HAProxy → Core/webEngine */
   portalRps: number;
   originRps: number;
   dbRps: number;
@@ -249,12 +265,23 @@ export interface SizingResult {
   hclDocUrl: string;
 }
 
+export interface HelmResources {
+  requests: { cpu: string; memory: string };
+  limits: { cpu: string; memory: string };
+}
+
+/**
+ * Hints keyed by hcl-dx-deployment chart names (CF233/CF237 values.yaml):
+ * `scaling.replicas.<name>` and `resources.<name>`.
+ */
 export interface HelmHints {
+  /** → scaling.replicas.<chartName> (only names the chart accepts there) */
   scaling: Record<string, number>;
-  resources: Record<
-    string,
-    { requests: { cpu: string; memory: string }; limits: { cpu: string; memory: string } }
-  >;
+  /** → resources.<chartName> */
+  resources: Record<string, HelmResources>;
+  /** Components deployed by separate charts (Search V2, DX IQ, People Service) */
+  otherCharts: Record<string, { replicas: number } & HelmResources>;
+  notes: string[];
 }
 
 export interface LiveUtilRow {

@@ -1,5 +1,10 @@
 import { HOURS_PER_MONTH } from "./defaults";
-import { HCL_CORE_POD, HCL_SIZING_DOC } from "./hclGuidance";
+import {
+  HCL_CORE_POD,
+  HCL_SIZING_DOC,
+  SESSION_HEAP_FRACTION,
+  SESSION_MEM_SAFETY,
+} from "./hclGuidance";
 import type {
   CapacityProfile,
   ComponentId,
@@ -29,7 +34,8 @@ function offeredFor(id: ComponentId, demand: Demand): number {
     case "cloudLb":
       return demand.originRps + demand.iqRps;
     case "haproxy":
-      return demand.portalRps + demand.iqRps;
+      // Pages + DAM assets (/dx/api/dam routed HAProxy → DAM) + IQ chat
+      return demand.portalRps + demand.damRps + demand.iqRps;
     case "core":
     case "webEngine":
       return demand.portalRps;
@@ -156,15 +162,33 @@ export function sizeNode(
         Math.max(1, replicas));
 
   if (id === "core" || id === "webEngine") {
-    const sessionMem =
-      (demand.concurrentSessions * inputs.sessionBytesKb) / 1024 / 1024;
-    memGi = Math.max(memGi, replicas * profile.memBaseGi + sessionMem * 1.3);
-    // HCL K8s guidance floors (CF239)
-    cpuCores = Math.max(cpuCores, replicas * HCL_CORE_POD.cpu);
-    memGi = Math.max(memGi, replicas * HCL_CORE_POD.podMemoryGi);
-    notes.push(HCL_CORE_POD.note);
+    // Fixed HCL pod shape (req = limit). Scale OUT when CPU demand or session
+    // heap would exceed one pod, instead of growing the pod past the guidance.
+    const pod = HCL_CORE_POD;
+    const cpuHeadroom = Math.max(0.1, pod.cpu - profile.cpuBase);
+    const cpuRep = Math.ceil((profile.cpuPerRps * offered) / cpuHeadroom);
+    const sessionMemGi =
+      (demand.concurrentSessions * inputs.sessionBytesKb * SESSION_MEM_SAFETY) /
+      1024 /
+      1024;
+    const heapBudgetGi = pod.heapGi * SESSION_HEAP_FRACTION;
+    const heapRep = Math.ceil(sessionMemGi / heapBudgetGi);
+    const before = replicas;
+    replicas = Math.max(replicas, cpuRep, heapRep);
+    if (replicas > before) {
+      notes.push(
+        replicas === heapRep
+          ? `Scaled to ${replicas} replicas: session heap ${sessionMemGi.toFixed(1)}Gi > ${heapBudgetGi}Gi/pod budget`
+          : `Scaled to ${replicas} replicas: CPU demand exceeds ${pod.cpu} CPU/pod`,
+      );
+    }
+    cpuCores = replicas * pod.cpu;
+    memGi = replicas * pod.podMemoryGi;
+    const cpuUsed =
+      replicas * profile.cpuBase + profile.cpuPerRps * offered;
+    notes.push(pod.note);
     notes.push(
-      `Session memory ~${(sessionMem * 1.3).toFixed(1)} Gi (incl 30% safety)`,
+      `Est. CPU used ${(cpuUsed / replicas).toFixed(2)} of ${pod.cpu}/pod; session heap ${(sessionMemGi / replicas).toFixed(2)}Gi of ${pod.heapGi}Gi heap/pod (≤${Math.round(SESSION_HEAP_FRACTION * 100)}% budget, incl ${Math.round((SESSION_MEM_SAFETY - 1) * 100)}% safety)`,
     );
     notes.push(`Ref: ${HCL_SIZING_DOC}`);
   }
@@ -232,44 +256,48 @@ export function sizeNode(
   };
 }
 
-export function edgeRatio(
-  key: TopologyEdge["ratioKey"],
+/**
+ * Absolute RPS on an edge. Uses demand values directly (not parent × ratio) so
+ * edge labels always agree with the target node's offered RPS.
+ * `fixed` edges carry the target node's offered load when it has one, else the
+ * source's (e.g. storage edges), else front-door RPS (edges from users/CDN).
+ */
+export function edgeRps(
+  edge: TopologyEdge,
   demand: Demand,
-  cacheHitRatio: number,
+  offeredById: Map<ComponentId, number>,
 ): number {
-  const miss = Math.max(0, Math.min(1, 1 - cacheHitRatio));
-  switch (key) {
-    case "fixed":
-      return 1;
+  switch (edge.ratioKey) {
     case "cdn_miss":
-      return miss;
+      return demand.originRps + demand.iqRps;
     case "portal":
-      return demand.frontDoorRps > 0
-        ? demand.portalRps /
-            (demand.portalRps + demand.iqRps + demand.authRps || 1)
-        : 1;
+      return demand.portalRps;
     case "db":
-      return demand.portalRps > 0 ? demand.dbRps / demand.portalRps : 0;
+      return demand.dbRps;
     case "search":
-      return demand.portalRps > 0 ? demand.searchRps / demand.portalRps : 0;
+      return demand.searchRps;
     case "dam":
-      return demand.portalRps > 0 ? demand.damRps / demand.portalRps : 0;
+      return demand.damRps;
     case "image":
-      return demand.damRps > 0 ? demand.imageRps / demand.damRps : 0;
+      return demand.imageRps;
     case "persist":
-      return 1;
+      return demand.persistRps;
     case "auth":
-      return demand.portalRps > 0 ? demand.authRps / demand.portalRps : 0;
+      return demand.authRps;
     case "iq":
-      return demand.frontDoorRps > 0
-        ? demand.iqRps / Math.max(demand.portalRps + demand.iqRps, 1)
-        : 0;
+      return demand.iqRps;
     case "author":
-      return demand.portalRps > 0 ? demand.authorRps / demand.portalRps : 0;
+      return demand.authorRps;
     case "ring":
-      return demand.portalRps > 0 ? demand.ringRps / demand.portalRps : 0;
+      return demand.ringRps;
+    case "fixed": {
+      if (edge.source === "users") return demand.frontDoorRps;
+      const target = offeredById.get(edge.target);
+      if (target != null && target > 0) return target;
+      return offeredById.get(edge.source) ?? demand.frontDoorRps;
+    }
     default: {
-      const _exhaustive: never = key;
+      const _exhaustive: never = edge.ratioKey;
       return _exhaustive;
     }
   }

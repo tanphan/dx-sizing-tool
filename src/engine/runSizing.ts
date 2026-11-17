@@ -5,7 +5,7 @@ import { normalizeInputs } from "./demand";
 import { buildHelmHints } from "./helm";
 import { HCL_CORE_POD, HCL_SIZING_DOC } from "./hclGuidance";
 import { getDefaultProfileId, loadProfile } from "./profiles";
-import { edgeRatio, getProfile, sizeNode } from "./sizeNode";
+import { edgeRps, getProfile, sizeNode } from "./sizeNode";
 import { selectTopology } from "./topology";
 import type {
   ComponentToggles,
@@ -47,6 +47,9 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   const inputs: UsageInputs = {
     ...args.inputs,
     cacheHitRatio: args.enableCdn === false ? 0 : args.inputs.cacheHitRatio,
+    damCacheHitRatio:
+      args.enableCdn === false ? 0 : (args.inputs.damCacheHitRatio ?? args.inputs.cacheHitRatio),
+    damRequestShare: args.inputs.damRequestShare ?? 0,
   };
 
   const { nodes: topoNodes, edges: topoEdges, toggles } = selectTopology(
@@ -58,8 +61,20 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   const warnings: string[] = [];
 
   warnings.push(
-    `Core/webEngine pod floors from HCL K8s sizing guide (CF239): ${HCL_CORE_POD.cpu} CPU, ${HCL_CORE_POD.podMemoryGi}Gi mem`,
+    `Core/webEngine use fixed HCL K8s guide pods (CF239): ${HCL_CORE_POD.cpu} CPU, ${HCL_CORE_POD.podMemoryGi}Gi (req=limit), ${HCL_CORE_POD.heapGi}Gi heap Xms=Xmx — scale out, not up`,
   );
+
+  // Pacing sanity: think time vs session math describe the same user differently.
+  if (inputs.thinkTimeSec > 0 && inputs.peakRpsOverride <= 0) {
+    const sessionPacing =
+      (Math.max(1, inputs.sessionDurationMin) * 60) / Math.max(1, inputs.reqPerSession);
+    const ratio = sessionPacing / inputs.thinkTimeSec;
+    if (ratio > 2 || ratio < 0.5) {
+      warnings.push(
+        `RPS paced by think time (${inputs.thinkTimeSec}s/request); session inputs imply ${sessionPacing.toFixed(0)}s/request — check which describes your users`,
+      );
+    }
+  }
 
   if (inputs.cacheHitRatio <= 0) {
     warnings.push("CDN/cache hit ratio is 0 — origin sees full front-door RPS");
@@ -145,24 +160,11 @@ export function runSizing(args: RunSizingArgs): SizingResult {
     }
   }
 
-  const edges = topoEdges.map((e) => {
-    const ratio = edgeRatio(e.ratioKey, demand, inputs.cacheHitRatio);
-    let parentRps = demand.frontDoorRps;
-    const parent = sized.find((n) => n.id === e.source);
-    if (parent) parentRps = parent.offeredRps;
-    else if (e.source === "users" || e.source === "cdn") {
-      parentRps = demand.frontDoorRps;
-    }
-    const rps =
-      e.ratioKey === "cdn_miss"
-        ? demand.originRps + demand.iqRps
-        : e.ratioKey === "auth"
-          ? demand.authRps
-          : e.ratioKey === "fixed" && e.source === "users"
-            ? demand.frontDoorRps
-            : parentRps * ratio;
-    return { ...e, rps };
-  });
+  const offeredById = new Map(sized.map((n) => [n.id, n.offeredRps]));
+  const edges = topoEdges.map((e) => ({
+    ...e,
+    rps: edgeRps(e, demand, offeredById),
+  }));
 
   const platformMonth = sized
     .filter((n) => n.plane === "platform")

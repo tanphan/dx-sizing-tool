@@ -27,6 +27,8 @@ export const scenarioPresets: ScenarioPreset[] = [
       pctAuthor: 5,
       pctFormPost: 5,
       damAttachRate: HCL_RENDERING_MIX.dam,
+      // HCL mix: DAM is 30% of requests (not an attach rate × assets)
+      damRequestShare: HCL_RENDERING_MIX.dam,
       assetsPerPage: 2,
       contentItems: 12800,
       productionPlatform: true,
@@ -46,6 +48,8 @@ export const scenarioPresets: ScenarioPreset[] = [
       pctAuthor: 5,
       pctFormPost: 5,
       damAttachRate: HCL_RENDERING_MIX.dam,
+      // HCL mix: DAM is 30% of requests (not an attach rate × assets)
+      damRequestShare: HCL_RENDERING_MIX.dam,
       assetsPerPage: 3,
       contentItems: 50000,
       productionPlatform: true,

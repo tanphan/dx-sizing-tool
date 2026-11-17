@@ -50,6 +50,16 @@ export const HCL_CORE_POD = {
   note: "HCL K8s sizing guide: 5.6 CPU, 8Gi pod mem (req=limit), heap 4Gi (Xms=Xmx)",
 } as const;
 
+/**
+ * Tool assumption (NOT from the HCL guide): share of the JVM heap budgeted for
+ * HTTP session state; the rest is left for WCM/JCR caches and working set.
+ * Core/webEngine replicas scale out when session memory exceeds this per pod.
+ */
+export const SESSION_HEAP_FRACTION = 0.5;
+
+/** Safety factor on raw session bytes (serialization / object overhead) */
+export const SESSION_MEM_SAFETY = 1.3;
+
 /** Rough RPS/replica calibration anchor: scale between HCL small and large tiers */
 export function hclSuggestedRpsPerReplica(concurrentUsers: number): number {
   // At 1k VU with ~cache+think time, Core often sits in tens of RPS/pod in lab docs;
