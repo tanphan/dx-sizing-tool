@@ -30,6 +30,7 @@ flowchart LR
   Demand --> Size[sizeNode per component<br/>sizeNode.ts]
   Profiles[profiles/*.json] --> Size
   Policy[policy.ts + hclGuidance.ts] --> Size
+  Prices[pricing/snapshot.json<br/>pricing.ts] --> Size
   Size --> Result[runSizing → SizingResult]
   Result --> Estimator & Simulator & Helm[helm.ts overlay]
 ```
@@ -44,8 +45,10 @@ flowchart LR
 | `src/profiles/*.json` | Capacity constants per component, tagged by CF release |
 | `src/catalogs/` | Product topology and toggle forcing |
 | `src/engine/helm.ts` | `hcl-dx-deployment` values overlay |
+| `src/engine/pricing.ts` | Unit prices from the committed price snapshot; tiered egress; discounts |
+| `src/pricing/snapshot.json` | Public cloud list prices by provider / region, written by `scripts/fetch-pricing.mjs` |
 
-The engine is pure TypeScript with no UI dependencies and runs in the browser. There's no backend.
+The engine is pure TypeScript with no UI dependencies and runs in the browser. There's no backend. Prices are never fetched at runtime; the site reads the committed snapshot.
 
 ## 3. Topology rules
 
@@ -84,6 +87,11 @@ Defaults are in `src/engine/defaults.ts`. Inputs that need data from your enviro
 | Avg page / asset KB | 0 / 0 (off) | Egress | ✅ |
 | Auth token overhead KB | 0 (off) | LTPA / JWT session memory | ✅ |
 | Growth CAGR, load multiplier | 0.15, 1 | Demand scale, applied once | ✅ |
+| Cloud provider, region | AWS, provider default (us-east-1 / eastus / us-central1) | List prices (§6.5) | ✅ (GKE needs the API key) |
+| Compute pricing basis | Node-pool VMs | Node-pool fit or serverless rates (§6.5) | ✅ |
+| Cloud discount % | 0 | Savings plan / reserved / committed use on cloud spend | ✅ |
+| Enterprise discount % | 0 | EDP / MACC-style agreement, on top | ✅ |
+| Unit costs (vCPU, GiB, storage, egress) | List prices for the region | Editing any of them switches to custom rates | ✅ |
 
 ## 5. Assumption sources
 
@@ -94,7 +102,8 @@ Every constant comes from one of three sources. Keep them separate in code.
 | **HCL documentation** | `hclGuidance.ts` | Core/webEngine pod 5.6 CPU / 8Gi (req = limit), 4Gi heap Xms = Xmx (CF239 K8s guide); rendering mix WCM 40 / pages 30 / DAM 30 |
 | **Design plan** | `defaults.ts` | CPU 0.6 / memory 0.7 / disk 0.7 headroom; busy-hour 4×; session safety ×1.3 |
 | **Tool policy** | `policy.ts`, `hclGuidance.ts` | Availability floors; capacity σ 0.25 / 0.1; 50% of heap for sessions; M/M/c latency model |
-| **Placeholder** | `profiles/*.json` | `rpsPerReplica`, `cpuPerRps`, … until lab-calibrated |
+| **Cloud list prices** | `pricing/snapshot.json` | vCPU-hour, GiB-hour, storage GiB-month, egress tiers per provider / region, with source URL and fetch date |
+| **Placeholder** | `profiles/*.json`, `defaults.ts` | `rpsPerReplica`, `cpuPerRps`, … until lab-calibrated; `defaultUnitCosts` (used only for custom rates and providers without snapshot data); AI token price |
 
 ## 6. Sizing model
 
@@ -155,9 +164,40 @@ The latency model treats each replica as one M/M/c server and scales the measure
 
 `runSizing({ replicaOverrides })` accepts counts **above or below** the recommendation. They apply only to scalable components and are clamped to ≥ 1. A node keeps `recommendedReplicas` and `minSafeReplicas`. Going below `minSafeReplicas` adds a node note and a result warning. In the Simulator, *Add replica* / *Remove replica* set the override; returning to the recommended count clears it.
 
-### 6.5 Costs
+### 6.5 Costs (`pricing.ts`, `runSizing.ts`)
 
-`total = infra (CPU·h + GiB·h + storage) + license + AI tokens + self-host LLM + egress`. Cloud provider multipliers apply to vCPU, memory, storage and egress unit prices.
+```
+total = infra·d + egress·d + license + AI tokens + self-host LLM
+infra = Σ (CPU·730·$vCPU + GiB·730·$GiB + storage·$storage)
+d     = (1 − cloud%) × (1 − enterprise%)          (each clamped to 0–99%)
+```
+
+Discounts apply to cloud spend only (infra and egress), never to the DX license, AI tokens or self-hosted LLM. Results carry `cloudListMonth` (before discounts), `cloudDiscountMonth` and `discountFactor`.
+
+**Unit prices.** `resolveUnitCosts(costs, provider, {region, basis, custom})` picks rates from `src/pricing/snapshot.json`:
+
+| Provider | Node-pool VMs (default) | Serverless pods | Storage | Egress |
+|---|---|---|---|---|
+| AWS (EKS) | Fit over EC2 c6i / m6i / r6i, Linux on-demand | Fargate Linux x86 | EBS gp3 | Internet egress tiers; first 100 GB free |
+| Azure (AKS) | Fit over Dlsv5 / Dsv5 / Esv5, Linux pay-as-you-go | Container Instances Standard | Premium SSD v2 capacity | Bandwidth, Microsoft-network routing tiers |
+| GKE | N2 core + RAM SKUs | Autopilot pod requests | Balanced PD | Premium-tier internet egress (highest destination rate) |
+| OpenShift | AWS rates (ROSA); subscription fee **not** included | | | |
+
+- **Node-pool fit.** `price = a·vCPU + b·GiB`, least squares over 9 shapes (3 families with memory ratios 1:2, 1:4 and 1:8, at 4, 8 and 16 vCPU). `a` and `b` are the per-vCPU and per-GiB rates. Relative RMS error is stored per region (0.1–2.5% in the first snapshot).
+- **Egress.** With list prices, each GB is billed at the rate of its tier (`egressCostMonth`). Custom rates use a flat $/GB.
+- **Fallbacks.** An unknown region falls back to the provider default. A missing serverless rate falls back to node-pool. A provider without snapshot data uses `defaultUnitCosts` and adds a "placeholder unit costs" warning.
+- **Custom rates.** Editing vCPU, GiB, storage or egress in the UI sets `pricing.custom = true`; *Use list prices* switches back.
+- **Not modelled:** reserved / spot pricing (use the discount fields), the K8s control-plane fee, node system overhead and bin-packing waste, managed services (DB, Redis, LB, NAT), support, taxes, currency other than USD.
+
+**Snapshot refresh.** `npm run pricing:fetch` (`scripts/fetch-pricing.mjs`) pulls:
+
+| Provider | Source | Login |
+|---|---|---|
+| AWS | Price List bulk offer files (`AmazonECS`, `AmazonEC2` CSV streamed, `AWSDataTransfer`) | None |
+| Azure | Retail Prices API | None |
+| GCP | Cloud Billing Catalog API | API key in `GCP_PRICING_API_KEY` |
+
+Rates outside sanity bounds are rejected per region. A provider that fails keeps its previous data and the script exits 1. Unchanged data produces no file diff. `--provider aws|azure|gke` limits a run; `--dry-run` prints to stdout.
 
 ## 7. Outputs
 
@@ -185,6 +225,9 @@ The latency model treats each replica as one M/M/c server and scales the measure
 | D1 | Calibrate profiles from a real Locust + `kubectl top` run | All profiles are still `default` |
 | A7 | Use or remove MAU, % anonymous, % form-post | Informational only today |
 | S1 | Carry Simulator overrides into the Estimator and exports | Overrides are Simulator-local state |
+| P1 | GKE list prices | Code path written but untested: needs `GCP_PRICING_API_KEY` |
+| P2 | Scheduled price refresh (GitHub Action → PR) | Needs repo-owner approval: the job needs `contents: write` and `pull-requests: write` |
+| P3 | Managed-service cost lines (DB, Redis, LB, NAT, control plane) | Platform nodes are sized as pods today |
 
 ## 10. Decision log
 
@@ -192,4 +235,5 @@ The latency model treats each replica as one M/M/c server and scales the measure
 |---|---|
 | 2026-11-11 | Shared engine for Estimator and Simulator. CF-tagged profiles. Infra and license costs kept separate. IQ as its own traffic class. Never one Core replica for production. |
 | 2026-11-17 | Growth × load applied once. Think time > 0 drives pacing (default 0). DAM routed via HAProxy with its own share and cache ratio. Core/webEngine at the fixed HCL pod, scaled out. Edges use absolute RPS. Helm overlay uses chart key paths with req = limit. |
+| 2026-11-19 | Unit prices come from a committed snapshot of public list prices (AWS bulk files, Azure Retail Prices API, GCP Catalog with a key), per provider and region. The invented provider multipliers were removed. Node-pool rates are a per-vCPU / per-GiB fit. Egress is tiered. Cloud and enterprise discounts compound and apply to cloud spend only. OpenShift uses AWS rates and excludes the subscription fee. |
 | 2026-11-17 | Plan headroom targets enforced (CPU 0.6, memory 0.7, disk 0.7). Availability policy, M/M/c latency check, busy-hour fallback, egress cost, auth token overhead and p90 util added. Environment-specific inputs default to off. Replica overrides allowed in both directions. |

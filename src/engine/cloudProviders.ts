@@ -1,13 +1,18 @@
 export type CloudProvider = "aws" | "azure" | "gke" | "rhos";
 
+/** Price book key (src/pricing/snapshot.json). OpenShift uses AWS rates (ROSA). */
+export type PricingProvider = "aws" | "azure" | "gke";
+
 export interface CloudProviderInfo {
   id: CloudProvider;
   label: string;
   short: string;
   /** Display names for platform nodes */
   skus: Record<string, string>;
-  /** Soft cost multipliers vs baseline unit costs */
-  costMult: { vcpu: number; mem: number; storage: number; egress: number };
+  /** Which price book entry supplies list prices (see engine/pricing.ts) */
+  pricingProvider: PricingProvider;
+  /** Extra caveat shown with the price source */
+  pricingNote?: string;
 }
 
 export const cloudProviders: Record<CloudProvider, CloudProviderInfo> = {
@@ -29,7 +34,7 @@ export const cloudProviders: Record<CloudProvider, CloudProviderInfo> = {
       containerRegistry: "ECR",
       egressNat: "NAT Gateway",
     },
-    costMult: { vcpu: 1, mem: 1, storage: 1, egress: 1.1 },
+    pricingProvider: "aws",
   },
   azure: {
     id: "azure",
@@ -49,7 +54,7 @@ export const cloudProviders: Record<CloudProvider, CloudProviderInfo> = {
       containerRegistry: "ACR",
       egressNat: "NAT Gateway",
     },
-    costMult: { vcpu: 1.02, mem: 1, storage: 0.95, egress: 1 },
+    pricingProvider: "azure",
   },
   gke: {
     id: "gke",
@@ -69,7 +74,7 @@ export const cloudProviders: Record<CloudProvider, CloudProviderInfo> = {
       containerRegistry: "Artifact Registry",
       egressNat: "Cloud NAT",
     },
-    costMult: { vcpu: 0.98, mem: 1, storage: 1, egress: 1.05 },
+    pricingProvider: "gke",
   },
   rhos: {
     id: "rhos",
@@ -89,7 +94,9 @@ export const cloudProviders: Record<CloudProvider, CloudProviderInfo> = {
       containerRegistry: "OpenShift internal registry / Quay",
       egressNat: "Egress IP / cloud NAT",
     },
-    costMult: { vcpu: 1.15, mem: 1.1, storage: 1.05, egress: 1 },
+    pricingProvider: "aws",
+    pricingNote:
+      "OpenShift uses AWS (ROSA) infrastructure list prices. The Red Hat subscription / ROSA service fee is not included; add it under DX license $/node-mo or as custom unit costs.",
   },
 };
 

@@ -38,6 +38,17 @@ npm run build
 - `src/profiles/` — CF-tagged capacity JSON (`dxcn-cf238`, `compose-cf237`)
 - `src/components/` — Estimator, Simulator, Calibrate, Live panels
 
+## Cloud pricing
+
+Unit prices come from a committed snapshot of **public on-demand list prices** ([src/pricing/snapshot.json](src/pricing/snapshot.json)) per provider and region: AWS (Price List bulk files) and Azure (Retail Prices API) need no login; GKE needs a Cloud Billing Catalog API key. Pick the region and compute basis (node-pool VMs or serverless pods) in the sidebar, and enter cloud / enterprise discount %. Editing a rate switches to custom prices.
+
+```bash
+npm run pricing:fetch                          # AWS + Azure (≈ 3–10 min)
+GCP_PRICING_API_KEY=<API_KEY> npm run pricing:fetch -- --provider gke
+```
+
+List prices exclude negotiated rates, the control-plane fee, managed services, support and taxes. Treat totals as estimates, not quotes. See SPEC §6.5.
+
 ## Auth topology note
 
 External IdP (OIDC/SAML) is **not** behind HAProxy: browser → IdP redirect, then Core/webEngine → IdP back-channel (token/JWKS). OpenLDAP binds are Core/webEngine → LDAP. Login callback/ACS returns as portal traffic via HAProxy.

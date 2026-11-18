@@ -17,6 +17,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CloudProvider } from "../engine/cloudProviders";
+import type { PricingSelection } from "../engine/pricing";
 import type {
   ComponentId,
   ComponentPlane,
@@ -36,6 +37,7 @@ interface Props {
   toggles: ComponentToggles;
   costs: UnitCosts;
   cloudProvider: CloudProvider;
+  pricing?: PricingSelection;
   result: SizingResult;
   onInputs: (v: UsageInputs) => void;
   onToggles: (v: ComponentToggles) => void;
@@ -176,6 +178,7 @@ function SimulatorCanvas({
   toggles,
   costs,
   cloudProvider,
+  pricing,
   result: _result,
   onInputs,
   onToggles,
@@ -220,10 +223,11 @@ function SimulatorCanvas({
         toggles,
         costs,
         cloudProvider,
+        pricing,
         replicaOverrides,
         enableCdn,
       }),
-    [product, inputs, toggles, costs, cloudProvider, replicaOverrides, enableCdn],
+    [product, inputs, toggles, costs, cloudProvider, pricing, replicaOverrides, enableCdn],
   );
   liveResultRef.current = liveResult;
 

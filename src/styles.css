@@ -608,3 +608,13 @@ textarea.mono {
 .sim-canvas .react-flow__minimap-mask {
   fill: rgba(0, 0, 0, 0.45) !important;
 }
+
+.price-source {
+  margin: 4px 0 12px;
+  font-size: 0.8rem;
+  color: var(--muted, #6b7280);
+  line-height: 1.4;
+}
+.price-source .price-notes {
+  opacity: 0.85;
+}

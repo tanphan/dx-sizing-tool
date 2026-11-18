@@ -54,6 +54,8 @@ export const defaultUnitCosts: UnitCosts = {
   memGiBPerHour: 0.005,
   storageGiBPerMonth: 0.1,
   egressGb: 0.09,
+  cloudDiscountPct: 0,
+  enterpriseDiscountPct: 0,
   tokensPer1k: 0.002,
   dxLicensePerNodeMonth: 0,
   selfHostLlmRamGiB: 8,

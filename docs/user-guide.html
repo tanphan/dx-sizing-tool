@@ -224,7 +224,7 @@ npm test          # engine unit tests
 npm run build     # production bundle → dist/</pre>
   <p>
     Settings persist in browser <span class="mono">localStorage</span> key
-    <span class="mono">dx-sizing-tool-v1</span> (product, inputs, toggles, unit costs).
+    <span class="mono">dx-sizing-tool-v2</span> (product, inputs, toggles, unit costs, cloud provider, region / basis).
   </p>
 
   <h2 id="layout">4. UI layout</h2>
@@ -260,7 +260,7 @@ npm run build     # production bundle → dist/</pre>
     They do not pass through Core / webEngine. HAProxy and the origin WAF / load balancer carry both page and DAM traffic.
   </div>
   <div class="callout">
-    <strong>Cloud &amp; production.</strong> The sidebar picks a cloud provider (AWS EKS, Azure AKS, Google GKE, Red Hat OpenShift), which adjusts unit costs and labels platform SKUs.
+    <strong>Cloud &amp; production.</strong> The top bar picks a cloud provider (AWS EKS, Azure AKS, Google GKE, Red Hat OpenShift), which sets list prices (§6.4) and labels platform SKUs.
     <em>Production platform</em> adds the origin WAF, cloud load balancer, DB secondary, secrets/KMS, observability, backup/DR, registry and egress NAT.
     Traffic then flows CDN miss → WAF → cloud LB → HAProxy.
   </div>
@@ -321,14 +321,35 @@ npm run build     # production bundle → dist/</pre>
     <tr><td>IQ chat</td><td>Enables IQ + MCP; token cost path</td></tr>
   </table>
 
-  <h3>6.4 Unit costs</h3>
+  <h3>6.4 Cloud prices, discounts and unit costs</h3>
   <p>
-    Editable $/vCPU-hour, $/GiB-hour, $/GiB storage-month, $/1K tokens, DX license $/node-month,
-    self-host LLM RAM GiB. Infra and license totals are kept separate on purpose.
+    Cloud unit prices come from a snapshot of <strong>public on-demand list prices</strong> bundled with the tool
+    (refreshed with <span class="mono">npm run pricing:fetch</span>). The price line under <em>Cloud &amp; production</em>
+    and above the Estimator warnings shows the provider, region, basis and fetch date.
   </p>
+  <table>
+    <tr><th>Control</th><th>What it does</th></tr>
+    <tr><td>Region</td><td>About 12 regions per provider. Each has its own vCPU, memory, storage and egress prices.</td></tr>
+    <tr><td>Compute pricing</td><td><em>Node-pool VMs</em> (default): per-vCPU and per-GiB rates fitted from general, compute and memory VM families (AWS c6i/m6i/r6i, Azure Dlsv5/Dsv5/Esv5, GCP N2). <em>Serverless pods</em>: Fargate, Container Instances or GKE Autopilot rates, usually higher.</td></tr>
+    <tr><td>Cloud discount %</td><td>Savings plans, reserved instances or committed-use discounts. Applies to cloud spend (infra + egress).</td></tr>
+    <tr><td>Enterprise discount %</td><td>EDP / MACC-style agreements, applied on top: net = list × (1 − cloud%) × (1 − enterprise%). Not applied to DX license or AI tokens.</td></tr>
+  </table>
+  <p>
+    Egress at list price uses the provider's tier table (for example, AWS: first 100 GB free, then $/GB falling with volume).
+    <em>Unit costs</em> (advanced) shows the active $/vCPU-hour, $/GiB-hour, $/GiB storage-month and $/GB egress.
+    Editing any of them switches to custom rates with flat egress; <em>Use list prices</em> switches back.
+    The same section holds $/1K tokens, DX license $/node-month and self-host LLM RAM. Infra and license totals are kept separate on purpose.
+  </p>
+  <div class="callout">
+    <strong>Coverage.</strong> AWS and Azure prices are public. GKE prices need a Google Cloud Billing API key at refresh time;
+    until then GKE uses placeholder rates and the Estimator warns. OpenShift uses AWS (ROSA) infrastructure rates, and
+    the Red Hat subscription / ROSA service fee is <strong>not</strong> included.
+    List prices also exclude the K8s control-plane fee, node overhead, managed services (DB, Redis, LB, NAT), support and taxes,
+    so treat totals as estimates, not quotes.
+  </div>
 
   <h2 id="estimator">7. Estimator</h2>
-  <p>Summary cards show front-door RPS, portal RPS, concurrent sessions, infra $, license $, AI tokens $, total $, and profile confidence.</p>
+  <p>Summary cards show front-door RPS, portal RPS, concurrent sessions, infra $, license $, AI tokens $, cloud discount (when set, with the list total), total $, and profile confidence. The <strong>Prices</strong> line states where unit prices came from.</p>
   <ul>
     <li><strong>Session math</strong> — concurrent sessions, sessions/day, footprint Mi, recommended timeout, sticky-session note for HAProxy.</li>
     <li><strong>BOM table</strong> — per component: replicas, offered/capacity RPS, util (p50), p90 util, est. p95, CPU, mem, storage, infra $, license $.</li>
@@ -501,7 +522,7 @@ egress GB/mo = DAU × 30 × req/session × origin share × response KB / 1024²<
     <tr><td>Core / webEngine always exactly 5.6 CPU / 8Gi per pod</td><td>By design (HCL pod shape). Load shows up as more replicas; see the node notes for which limit drove the count.</td></tr>
     <tr><td>Saved inputs lack the new DAM fields</td><td>The DAM cache hit ratio falls back to the page ratio and request share to 0. Set them in the sidebar, or clear saved state.</td></tr>
     <tr><td>Live compare all “missing”</td><td>Pod names don’t match map — rename needles or include <span class="mono">core</span>/<span class="mono">haproxy</span>/<span class="mono">dam</span> substrings</td></tr>
-    <tr><td>Stale UI state</td><td>Clear <span class="mono">localStorage</span> key <span class="mono">dx-sizing-tool-v1</span></td></tr>
+    <tr><td>Stale UI state</td><td>Clear <span class="mono">localStorage</span> key <span class="mono">dx-sizing-tool-v2</span></td></tr>
   </table>
 
   <h2>15. Project map</h2>

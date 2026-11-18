@@ -5,6 +5,13 @@ import type { ComponentToggles, Product, UnitCosts, UsageInputs } from "../engin
 import { getCatalog } from "../catalogs";
 import { scenarioPresets, applyScenario } from "../scenarios";
 import { AVAILABILITY_TARGETS } from "../engine/policy";
+import {
+  BASIS_LABELS,
+  regionsFor,
+  type ComputeBasis,
+  type PriceSource,
+  type PricingSelection,
+} from "../engine/pricing";
 
 interface Props {
   product: Product;
@@ -15,6 +22,11 @@ interface Props {
   onInputs: (v: UsageInputs) => void;
   onToggles: (v: ComponentToggles) => void;
   onCosts: (v: UnitCosts) => void;
+  /** Unit costs the engine uses (list prices or custom) */
+  effectiveCosts: UnitCosts;
+  priceSource: PriceSource;
+  pricing: PricingSelection;
+  onPricing: (p: PricingSelection) => void;
 }
 
 function num(
@@ -91,9 +103,25 @@ export function InputForm({
   onInputs,
   onToggles,
   onCosts,
+  effectiveCosts,
+  priceSource,
+  pricing,
+  onPricing,
 }: Props) {
   const catalog = getCatalog(product);
   const cloud = cloudProviders[cloudProvider];
+  const regions = regionsFor(cloudProvider);
+  /** Editing a cloud rate switches to custom unit costs, starting from the current values. */
+  const setRate = (key: "vcpuPerHour" | "memGiBPerHour" | "storageGiBPerMonth" | "egressGb") =>
+    (e: ChangeEvent<HTMLInputElement>) => {
+      onCosts({ ...effectiveCosts, egressTiers: undefined, [key]: Number(e.target.value) });
+      if (!pricing.custom) onPricing({ ...pricing, custom: true });
+    };
+  const setPct = (key: "cloudDiscountPct" | "enterpriseDiscountPct") =>
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const v = Math.min(99, Math.max(0, Number(e.target.value) || 0));
+      onCosts({ ...costs, [key]: v });
+    };
   const hclOptionals = catalog.nodes.filter(
     (n) => n.optionalKey && n.plane === "hcl",
   );
@@ -107,6 +135,83 @@ export function InputForm({
         <h2>Cloud & production</h2>
         <p className="field-hint" style={{ marginBottom: 8 }}>
           Provider: <strong>{cloud.label}</strong> — SKUs label platform nodes
+        </p>
+        <Field label="Region" hint="List prices from the committed price snapshot">
+          {regions.length ? (
+            <select
+              value={priceSource.region ?? pricing.region ?? ""}
+              onChange={(e) => onPricing({ ...pricing, region: e.target.value, custom: false })}
+            >
+              {regions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id} · {r.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="field-hint warn-text">No {cloud.short} prices in snapshot</span>
+          )}
+        </Field>
+        <Field
+          label="Compute pricing"
+          hint="Node-pool VMs (typical EKS/AKS/GKE) or serverless pods (Fargate / ACI / Autopilot)"
+        >
+          <select
+            value={pricing.basis ?? "instance"}
+            onChange={(e) =>
+              onPricing({ ...pricing, basis: e.target.value as ComputeBasis, custom: false })
+            }
+          >
+            {(Object.keys(BASIS_LABELS) as ComputeBasis[]).map((b) => (
+              <option key={b} value={b}>
+                {BASIS_LABELS[b]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Cloud discount %"
+          hint="Savings plan / reserved / committed-use discount on cloud spend (infra + egress)"
+        >
+          <input
+            type="number"
+            min={0}
+            max={99}
+            step={1}
+            value={costs.cloudDiscountPct ?? 0}
+            onChange={setPct("cloudDiscountPct")}
+          />
+        </Field>
+        <Field
+          label="Enterprise discount %"
+          hint="EDP / MACC-style agreement, applied on top of the cloud discount. Not applied to license or AI tokens"
+        >
+          <input
+            type="number"
+            min={0}
+            max={99}
+            step={1}
+            value={costs.enterpriseDiscountPct ?? 0}
+            onChange={setPct("enterpriseDiscountPct")}
+          />
+        </Field>
+        <p
+          className={`field-hint${priceSource.kind === "placeholder" ? " warn-text" : ""}`}
+          title={priceSource.notes.join("\n")}
+        >
+          Prices: {priceSource.summary}
+          {priceSource.kind === "custom" && cloudProvider ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => onPricing({ ...pricing, custom: false })}
+              >
+                Use list prices
+              </button>
+            </>
+          ) : null}
         </p>
         <label className="toggle" style={{ marginBottom: 8 }}>
           <input
@@ -647,15 +752,13 @@ export function InputForm({
         <summary>Unit costs</summary>
         <Field
           label="$ / vCPU-hour"
-          hint="Cloud/on-prem vCPU rate for infra $/mo"
+          hint="List price unless edited; editing switches to custom rates"
         >
           <input
             type="number"
-            step="0.001"
-            value={costs.vcpuPerHour}
-            onChange={(e) =>
-              onCosts({ ...costs, vcpuPerHour: Number(e.target.value) })
-            }
+            step="0.0001"
+            value={effectiveCosts.vcpuPerHour}
+            onChange={setRate("vcpuPerHour")}
           />
         </Field>
         <Field
@@ -664,24 +767,35 @@ export function InputForm({
         >
           <input
             type="number"
-            step="0.001"
-            value={costs.memGiBPerHour}
-            onChange={(e) =>
-              onCosts({ ...costs, memGiBPerHour: Number(e.target.value) })
-            }
+            step="0.0001"
+            value={effectiveCosts.memGiBPerHour}
+            onChange={setRate("memGiBPerHour")}
           />
         </Field>
         <Field
           label="$ / GiB storage-mo"
-          hint="Block/object storage per GiB-month"
+          hint="Block storage per GiB-month (gp3 / Premium SSD v2 / Balanced PD)"
         >
           <input
             type="number"
             step="0.01"
-            value={costs.storageGiBPerMonth}
-            onChange={(e) =>
-              onCosts({ ...costs, storageGiBPerMonth: Number(e.target.value) })
-            }
+            value={effectiveCosts.storageGiBPerMonth}
+            onChange={setRate("storageGiBPerMonth")}
+          />
+        </Field>
+        <Field
+          label="$ / GB egress"
+          hint={
+            effectiveCosts.egressTiers?.length
+              ? "First paid tier shown; list prices apply the full tier table"
+              : "Flat internet egress rate"
+          }
+        >
+          <input
+            type="number"
+            step="0.001"
+            value={effectiveCosts.egressGb}
+            onChange={setRate("egressGb")}
           />
         </Field>
         <Field

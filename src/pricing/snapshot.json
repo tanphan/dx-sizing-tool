@@ -1,0 +1,1334 @@
+{
+  "currency": "USD",
+  "providers": {
+    "azure": {
+      "source": "https://prices.azure.com/api/retail/prices",
+      "fetchedAt": "2026-11-18",
+      "priceType": "public on-demand list price",
+      "regions": {
+        "eastus": {
+          "label": "US East",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0405,
+            "memGiBPerHour": 0.00445,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0803,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "eastus2": {
+          "label": "US East 2",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0405,
+            "memGiBPerHour": 0.00445,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0803,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "westus2": {
+          "label": "US West 2",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0405,
+            "memGiBPerHour": 0.00445,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0803,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "canadacentral": {
+          "label": "CA Central",
+          "instance": {
+            "vcpuPerHour": 0.03875,
+            "memGiBPerHour": 0.003768,
+            "relRmsError": 0.0047,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0446,
+            "memGiBPerHour": 0.00487,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0883,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "brazilsouth": {
+          "label": "BR South",
+          "instance": {
+            "vcpuPerHour": 0.0535,
+            "memGiBPerHour": 0.005857,
+            "relRmsError": 0.0043,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.081,
+            "memGiBPerHour": 0.00889,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.1518,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.181,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.181
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.175
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.17
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.16
+            },
+            {
+              "upToGb": null,
+              "price": 0.16
+            }
+          ]
+        },
+        "northeurope": {
+          "label": "EU North",
+          "instance": {
+            "vcpuPerHour": 0.037119,
+            "memGiBPerHour": 0.004162,
+            "relRmsError": 0.0038,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0405,
+            "memGiBPerHour": 0.00445,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0803,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "westeurope": {
+          "label": "EU West",
+          "instance": {
+            "vcpuPerHour": 0.03925,
+            "memGiBPerHour": 0.004589,
+            "relRmsError": 0.0014,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0466,
+            "memGiBPerHour": 0.00511,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0949,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "uksouth": {
+          "label": "UK South",
+          "instance": {
+            "vcpuPerHour": 0.04125,
+            "memGiBPerHour": 0.004018,
+            "relRmsError": 0.0248,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0466,
+            "memGiBPerHour": 0.00511,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0927,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "germanywestcentral": {
+          "label": "DE West Central",
+          "instance": {
+            "vcpuPerHour": 0.03925,
+            "memGiBPerHour": 0.004589,
+            "relRmsError": 0.0014,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04656,
+            "memGiBPerHour": 0.00511,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0949,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.087,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.087
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.083
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.07
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.05
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ]
+        },
+        "centralindia": {
+          "label": "IN Central",
+          "instance": {
+            "vcpuPerHour": 0.03525,
+            "memGiBPerHour": 0.003732,
+            "relRmsError": 0.005,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0426,
+            "memGiBPerHour": 0.00466,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0912,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.12,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.12
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.082
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.08
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ]
+        },
+        "southeastasia": {
+          "label": "AP Southeast",
+          "instance": {
+            "vcpuPerHour": 0.041,
+            "memGiBPerHour": 0.004429,
+            "relRmsError": 0.017,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0506,
+            "memGiBPerHour": 0.00553,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0964,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.12,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.12
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.082
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.08
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ]
+        },
+        "australiaeast": {
+          "label": "AU East",
+          "instance": {
+            "vcpuPerHour": 0.04775,
+            "memGiBPerHour": 0.003411,
+            "relRmsError": 0.0179,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0486,
+            "memGiBPerHour": 0.00532,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0803,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.12,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.12
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.082
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.08
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ]
+        },
+        "japaneast": {
+          "label": "JA East",
+          "instance": {
+            "vcpuPerHour": 0.0465,
+            "memGiBPerHour": 0.003714,
+            "relRmsError": 0.0082,
+            "shapes": [
+              "Standard_D16ls_v5",
+              "Standard_D16s_v5",
+              "Standard_D4ls_v5",
+              "Standard_D4s_v5",
+              "Standard_D8ls_v5",
+              "Standard_D8s_v5",
+              "Standard_E16s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5"
+            ],
+            "family": "Dlsv5 / Dsv5 / Esv5 (Linux, pay-as-you-go)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0506,
+            "memGiBPerHour": 0.00553,
+            "family": "Container Instances (Standard)"
+          },
+          "storageGiBPerMonth": 0.0964,
+          "storageProduct": "Premium SSD v2 capacity",
+          "egressGb": 0.12,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10335,
+              "price": 0.12
+            },
+            {
+              "upToGb": 51295,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153695,
+              "price": 0.082
+            },
+            {
+              "upToGb": 512095,
+              "price": 0.08
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ]
+        }
+      }
+    },
+    "aws": {
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json",
+      "fetchedAt": "2026-11-18",
+      "priceType": "public on-demand list price",
+      "regions": {
+        "us-east-1": {
+          "label": "US East (N. Virginia)",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04048,
+            "memGiBPerHour": 0.004445,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.08,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "us-east-2": {
+          "label": "US East (Ohio)",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04048,
+            "memGiBPerHour": 0.004445,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.08,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "us-west-2": {
+          "label": "US West (Oregon)",
+          "instance": {
+            "vcpuPerHour": 0.035,
+            "memGiBPerHour": 0.003464,
+            "relRmsError": 0.0137,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04048,
+            "memGiBPerHour": 0.004445,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.08,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "ca-central-1": {
+          "label": "Canada (Central)",
+          "instance": {
+            "vcpuPerHour": 0.03875,
+            "memGiBPerHour": 0.003768,
+            "relRmsError": 0.0047,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04456,
+            "memGiBPerHour": 0.004865,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.088,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "sa-east-1": {
+          "label": "South America (Sao Paulo)",
+          "instance": {
+            "vcpuPerHour": 0.0535,
+            "memGiBPerHour": 0.005857,
+            "relRmsError": 0.0043,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.0696,
+            "memGiBPerHour": 0.0076,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.152,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.15,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.15
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.138
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.126
+            },
+            {
+              "upToGb": null,
+              "price": 0.114
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "eu-west-1": {
+          "label": "EU (Ireland)",
+          "instance": {
+            "vcpuPerHour": 0.0371,
+            "memGiBPerHour": 0.004164,
+            "relRmsError": 0.0037,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04048,
+            "memGiBPerHour": 0.004445,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.088,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "eu-west-2": {
+          "label": "EU (London)",
+          "instance": {
+            "vcpuPerHour": 0.04125,
+            "memGiBPerHour": 0.004018,
+            "relRmsError": 0.0248,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04656,
+            "memGiBPerHour": 0.00511,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.0928,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "eu-central-1": {
+          "label": "EU (Frankfurt)",
+          "instance": {
+            "vcpuPerHour": 0.03925,
+            "memGiBPerHour": 0.004589,
+            "relRmsError": 0.0014,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04656,
+            "memGiBPerHour": 0.00511,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.0952,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.09,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.09
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.07
+            },
+            {
+              "upToGb": null,
+              "price": 0.05
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "ap-south-1": {
+          "label": "Asia Pacific (Mumbai)",
+          "instance": {
+            "vcpuPerHour": 0.03525,
+            "memGiBPerHour": 0.003732,
+            "relRmsError": 0.005,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04256,
+            "memGiBPerHour": 0.004655,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.0912,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.1093,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.1093
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.082
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "ap-southeast-1": {
+          "label": "Asia Pacific (Singapore)",
+          "instance": {
+            "vcpuPerHour": 0.041,
+            "memGiBPerHour": 0.004429,
+            "relRmsError": 0.017,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.05056,
+            "memGiBPerHour": 0.00553,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.096,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.12,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.12
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.085
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.082
+            },
+            {
+              "upToGb": null,
+              "price": 0.08
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "ap-southeast-2": {
+          "label": "Asia Pacific (Sydney)",
+          "instance": {
+            "vcpuPerHour": 0.04775,
+            "memGiBPerHour": 0.003411,
+            "relRmsError": 0.0179,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.04856,
+            "memGiBPerHour": 0.00532,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.096,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.114,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.114
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.098
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.094
+            },
+            {
+              "upToGb": null,
+              "price": 0.092
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        },
+        "ap-northeast-1": {
+          "label": "Asia Pacific (Tokyo)",
+          "instance": {
+            "vcpuPerHour": 0.0465,
+            "memGiBPerHour": 0.003714,
+            "relRmsError": 0.0082,
+            "shapes": [
+              "c6i.2xlarge",
+              "c6i.4xlarge",
+              "c6i.xlarge",
+              "m6i.2xlarge",
+              "m6i.4xlarge",
+              "m6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "r6i.xlarge"
+            ],
+            "family": "EC2 c6i / m6i / r6i (Linux, on-demand)"
+          },
+          "serverless": {
+            "vcpuPerHour": 0.05056,
+            "memGiBPerHour": 0.00553,
+            "family": "Fargate (Linux x86)"
+          },
+          "storageGiBPerMonth": 0.096,
+          "storageProduct": "EBS gp3",
+          "egressGb": 0.114,
+          "egressTiers": [
+            {
+              "upToGb": 100,
+              "price": 0
+            },
+            {
+              "upToGb": 10240,
+              "price": 0.114
+            },
+            {
+              "upToGb": 51200,
+              "price": 0.089
+            },
+            {
+              "upToGb": 153600,
+              "price": 0.086
+            },
+            {
+              "upToGb": null,
+              "price": 0.084
+            }
+          ],
+          "publication": "2026-11-18T02:04:24Z"
+        }
+      }
+    }
+  },
+  "generatedAt": "2026-11-18"
+}

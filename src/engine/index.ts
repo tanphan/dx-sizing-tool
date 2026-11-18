@@ -11,3 +11,4 @@ export * from "./liveCompare";
 export * from "./export";
 export * from "./hclGuidance";
 export * from "./cloudProviders";
+export * from "./pricing";

@@ -54,6 +54,13 @@ export function Estimator({ result }: Props) {
             <div className="k">{Math.round(result.costs.egressGbMonth).toLocaleString()} GB origin</div>
           </div>
         )}
+        {result.costs.cloudDiscountMonth > 0.005 && (
+          <div className="card">
+            <div className="k">Cloud discount $/mo</div>
+            <div className="v">−{money(result.costs.cloudDiscountMonth)}</div>
+            <div className="k">list {money(result.costs.cloudListMonth)}</div>
+          </div>
+        )}
         <div className="card">
           <div className="k">Total $/mo</div>
           <div className="v">{money(result.costs.totalMonth)}</div>
@@ -65,6 +72,18 @@ export function Estimator({ result }: Props) {
           </div>
         </div>
       </div>
+
+      <p
+        className={`price-source${result.priceSource.kind === "placeholder" ? " warn-text" : ""}`}
+      >
+        <strong>Prices:</strong> {result.priceSource.summary}
+        {result.costs.discountFactor < 1
+          ? ` Discounts ×${result.costs.discountFactor.toFixed(3)} on cloud spend.`
+          : ""}
+        {result.priceSource.notes.length > 0 && (
+          <span className="price-notes"> {result.priceSource.notes.join(" ")}</span>
+        )}
+      </p>
 
       {result.warnings.length > 0 && (
         <ul className="warnings">

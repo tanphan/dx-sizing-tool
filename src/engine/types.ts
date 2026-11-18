@@ -122,11 +122,24 @@ export interface UsageInputs {
   authTokenKb: number;
 }
 
+/** Internet egress price tier: GB up to `upToGb` (null = unbounded) at `price` $/GB */
+export interface EgressTier {
+  upToGb: number | null;
+  price: number;
+}
+
 export interface UnitCosts {
   vcpuPerHour: number;
   memGiBPerHour: number;
   storageGiBPerMonth: number;
+  /** Flat $/GB, used when no tiers are set */
   egressGb: number;
+  /** Tiered egress from the price book (list prices only) */
+  egressTiers?: EgressTier[];
+  /** Savings plan / reserved / committed-use discount on cloud spend, % (0–99) */
+  cloudDiscountPct: number;
+  /** Enterprise agreement discount (EDP, MACC, …) applied on top, % (0–99) */
+  enterpriseDiscountPct: number;
   tokensPer1k: number;
   dxLicensePerNodeMonth: number;
   selfHostLlmRamGiB: number;
@@ -283,6 +296,12 @@ export interface CostTotals {
   llmInfraMonth: number;
   egressMonth: number;
   egressGbMonth: number;
+  /** Cloud spend (infra + egress) at list price, before discounts */
+  cloudListMonth: number;
+  /** Discount taken off cloud spend (list − net) */
+  cloudDiscountMonth: number;
+  /** (1 − cloud%) × (1 − enterprise%) */
+  discountFactor: number;
   totalMonth: number;
   vcpuHours: number;
   memGiBHours: number;
@@ -295,6 +314,8 @@ export interface SizingResult {
   profileId: string;
   confidence: "default" | "lab-calibrated";
   cloudProvider?: string;
+  /** Where unit prices came from (snapshot list prices, custom, placeholder) */
+  priceSource: import("./pricing").PriceSource;
   demand: Demand;
   nodes: SizedNode[];
   edges: Array<TopologyEdge & { rps: number }>;

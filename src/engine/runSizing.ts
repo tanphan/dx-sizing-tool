@@ -1,10 +1,15 @@
-import type { CloudProvider } from "./cloudProviders";
-import { cloudProviders } from "./cloudProviders";
-import { defaultUsageInputs, HOURS_PER_MONTH } from "./defaults";
+import { cloudProviders, type CloudProvider } from "./cloudProviders";
+import { defaultUnitCosts, defaultUsageInputs, HOURS_PER_MONTH } from "./defaults";
 import { normalizeInputs } from "./demand";
 import { buildHelmHints } from "./helm";
 import { HCL_CORE_POD, HCL_SIZING_DOC } from "./hclGuidance";
 import { availabilityPolicy } from "./policy";
+import {
+  discountFactor,
+  egressCostMonth,
+  resolveUnitCosts,
+  type PricingSelection,
+} from "./pricing";
 import { getDefaultProfileId, loadProfile } from "./profiles";
 import { edgeRps, getProfile, sizeNode } from "./sizeNode";
 import { selectTopology } from "./topology";
@@ -23,6 +28,8 @@ export interface RunSizingArgs {
   costs: UnitCosts;
   profileId?: string;
   cloudProvider?: CloudProvider;
+  /** Region / compute basis for snapshot list prices, or custom = use `costs` as entered */
+  pricing?: PricingSelection;
   /** Manual replica counts per component id (Simulator add / remove). Either direction. */
   replicaOverrides?: Partial<Record<string, number>>;
   enableCdn?: boolean;
@@ -35,16 +42,21 @@ export function runSizing(args: RunSizingArgs): SizingResult {
     ? cloudProviders[args.cloudProvider]
     : undefined;
 
-  const costs: UnitCosts = cloud
-    ? {
-        ...args.costs,
-        vcpuPerHour: args.costs.vcpuPerHour * cloud.costMult.vcpu,
-        memGiBPerHour: args.costs.memGiBPerHour * cloud.costMult.mem,
-        storageGiBPerMonth:
-          args.costs.storageGiBPerMonth * cloud.costMult.storage,
-        egressGb: args.costs.egressGb * cloud.costMult.egress,
-      }
-    : args.costs;
+  // Unit prices: snapshot list prices for the provider / region, unless the user entered custom
+  // rates. Older saved state may lack newer fields, so merge defaults first.
+  const { costs: listCosts, source: priceSource } = resolveUnitCosts(
+    { ...defaultUnitCosts, ...args.costs },
+    args.cloudProvider,
+    args.pricing,
+  );
+  // Discounts apply to cloud spend (infra + egress), not to license, AI tokens or self-host LLM.
+  const factor = discountFactor(listCosts);
+  const costs: UnitCosts = {
+    ...listCosts,
+    vcpuPerHour: listCosts.vcpuPerHour * factor,
+    memGiBPerHour: listCosts.memGiBPerHour * factor,
+    storageGiBPerMonth: listCosts.storageGiBPerMonth * factor,
+  };
 
   // Fill fields missing from older saved state (localStorage) with defaults.
   const merged: UsageInputs = { ...defaultUsageInputs, ...args.inputs };
@@ -158,8 +170,17 @@ export function runSizing(args: RunSizingArgs): SizingResult {
     demand.iqEnabled && costs.selfHostLlmRamGiB > 0
       ? costs.selfHostLlmRamGiB * HOURS_PER_MONTH * costs.selfHostLlmRamGiBHour
       : 0;
-  // Origin egress (0 unless response sizes are entered)
-  const egressMonth = demand.egressGbMonth * costs.egressGb;
+  // Origin egress (0 unless response sizes are entered); tiered when list prices carry tiers
+  const egressListMonth = egressCostMonth(
+    demand.egressGbMonth,
+    listCosts.egressGb,
+    listCosts.egressTiers,
+  );
+  const egressMonth = egressListMonth * factor;
+  const cloudListMonth = infraMonth / factor + egressListMonth;
+  const cloudDiscountMonth = cloudListMonth - (infraMonth + egressMonth);
+
+  if (priceSource.kind === "placeholder") warnings.push(priceSource.summary);
 
   const red = sized.filter((n) => n.utilBand === "red");
   if (red.length) {
@@ -176,6 +197,7 @@ export function runSizing(args: RunSizingArgs): SizingResult {
     profileId: capacity.id,
     confidence: capacity.confidence,
     cloudProvider: cloud?.id,
+    priceSource,
     demand,
     nodes: sized,
     edges,
@@ -201,6 +223,9 @@ export function runSizing(args: RunSizingArgs): SizingResult {
       llmInfraMonth,
       egressMonth,
       egressGbMonth: demand.egressGbMonth,
+      cloudListMonth,
+      cloudDiscountMonth,
+      discountFactor: factor,
       totalMonth: infraMonth + licenseMonth + tokenMonth + llmInfraMonth + egressMonth,
       vcpuHours: sized.reduce((s, n) => s + n.cpuCores * HOURS_PER_MONTH, 0),
       memGiBHours: sized.reduce((s, n) => s + n.memGi * HOURS_PER_MONTH, 0),

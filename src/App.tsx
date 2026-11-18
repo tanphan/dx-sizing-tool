@@ -10,8 +10,10 @@ import {
   defaultUnitCosts,
   defaultUsageInputs,
   getDefaultProfileId,
+  resolveUnitCosts,
   runSizing,
   type CloudProvider,
+  type PricingSelection,
   type ComponentToggles,
   type Product,
   type UnitCosts,
@@ -28,6 +30,7 @@ function loadState(): {
   toggles: ComponentToggles;
   costs: UnitCosts;
   cloudProvider: CloudProvider;
+  pricing?: PricingSelection;
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,6 +41,7 @@ function loadState(): {
       toggles: ComponentToggles;
       costs: UnitCosts;
       cloudProvider: CloudProvider;
+      pricing?: PricingSelection;
     };
   } catch {
     return null;
@@ -60,6 +64,9 @@ export default function App() {
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>(
     saved?.cloudProvider ?? "aws",
   );
+  const [pricing, setPricing] = useState<PricingSelection>(
+    saved?.pricing ?? { basis: "instance" },
+  );
   const [tab, setTab] = useState<Tab>("estimator");
   const [profileId, setProfileId] = useState<string | undefined>();
 
@@ -71,9 +78,15 @@ export default function App() {
         toggles,
         costs,
         cloudProvider,
+        pricing,
         profileId: profileId ?? getDefaultProfileId(product),
       }),
-    [product, inputs, toggles, costs, cloudProvider, profileId],
+    [product, inputs, toggles, costs, cloudProvider, pricing, profileId],
+  );
+  // Unit costs as the engine will use them (list prices for provider / region, or custom)
+  const resolved = useMemo(
+    () => resolveUnitCosts({ ...defaultUnitCosts, ...costs }, cloudProvider, pricing),
+    [costs, cloudProvider, pricing],
   );
 
   const persist = (
@@ -83,6 +96,7 @@ export default function App() {
       toggles: ComponentToggles;
       costs: UnitCosts;
       cloudProvider: CloudProvider;
+      pricing: PricingSelection;
     }>,
   ) => {
     const payload = {
@@ -91,6 +105,7 @@ export default function App() {
       toggles: next.toggles ?? toggles,
       costs: next.costs ?? costs,
       cloudProvider: next.cloudProvider ?? cloudProvider,
+      pricing: next.pricing ?? pricing,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   };
@@ -136,8 +151,11 @@ export default function App() {
             value={cloudProvider}
             onChange={(e) => {
               const v = e.target.value as CloudProvider;
+              // Region ids differ per provider: fall back to the provider default.
+              const p = { ...pricing, region: undefined };
               setCloudProvider(v);
-              persist({ cloudProvider: v });
+              setPricing(p);
+              persist({ cloudProvider: v, pricing: p });
             }}
             title="Cloud provider"
           >
@@ -185,9 +203,16 @@ export default function App() {
               setToggles(v);
               persist({ toggles: v });
             }}
+            effectiveCosts={resolved.costs}
+            priceSource={resolved.source}
+            pricing={pricing}
             onCosts={(v) => {
               setCosts(v);
               persist({ costs: v });
+            }}
+            onPricing={(p) => {
+              setPricing(p);
+              persist({ pricing: p });
             }}
           />
         </aside>
@@ -200,6 +225,7 @@ export default function App() {
               toggles={toggles}
               costs={costs}
               cloudProvider={cloudProvider}
+              pricing={pricing}
               result={result}
               onInputs={(v) => {
                 setInputs(v);
