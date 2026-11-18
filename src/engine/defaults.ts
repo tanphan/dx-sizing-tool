@@ -37,6 +37,16 @@ export const defaultUsageInputs: UsageInputs = {
   loadMultiplier: 1,
   sessionBytesKb: 150,
   productionPlatform: false,
+  // Headroom targets from the design plan (docs/SPEC.md §6)
+  targetCpuUtil: 0.6,
+  targetMemUtil: 0.7,
+  targetDiskUtil: 0.7,
+  busyHourFactor: 4,
+  // Environment-specific measurements: 0 = feature off until you enter real values
+  baselineP95Ms: 0,
+  avgPageKb: 0,
+  avgAssetKb: 0,
+  authTokenKb: 0,
 };
 
 export const defaultUnitCosts: UnitCosts = {

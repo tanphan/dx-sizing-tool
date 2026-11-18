@@ -8,8 +8,15 @@ export function normalizeInputs(
   const growth = 1 + Math.max(0, raw.growthCagr);
   // Scale factor applied exactly once (previously applied twice to derived RPS).
   const scale = growth * raw.loadMultiplier;
-  const uPeak = raw.peakConcurrentUsers * scale;
   const sessionSec = Math.max(1, raw.sessionDurationMin * 60);
+
+  // Peak users: as given, or — when only DAU is known — the average concurrency
+  // (DAU × session length ÷ day) times a busy-hour factor (plan default 4×).
+  const busyHour = raw.peakConcurrentUsers <= 0 && raw.dau > 0;
+  const basePeakUsers = busyHour
+    ? ((raw.dau * raw.sessionDurationMin) / (24 * 60)) * Math.max(1, raw.busyHourFactor)
+    : Math.max(0, raw.peakConcurrentUsers);
+  const uPeak = basePeakUsers * scale;
 
   // Pacing: seconds between requests per concurrent user.
   // thinkTimeSec > 0 → closed-loop VU model (Locust `wait_time`), conservative
@@ -89,6 +96,20 @@ export function normalizeInputs(
     rwxStorageGi += Math.max(50, damStorageGiMonth * 0.5 + 20);
   }
 
+  // Session memory: base session + auth token/subject overhead for the
+  // authenticated share (LTPA / JWT). 0 overhead by default.
+  const sessionBytesKbEff =
+    raw.sessionBytesKb + Math.max(0, raw.authTokenKb) * authFrac;
+
+  // Origin egress: monthly request volume × origin (cache-miss) share × response
+  // size. Uses daily volume, not peak. CDN-served bytes are the CDN's egress and
+  // are excluded. 0 unless response sizes are entered.
+  const monthlyRequests = sessionsPerDay * 30 * Math.max(0, raw.reqPerSession);
+  const originKbPerRequest =
+    (1 - damShare) * pageMiss * Math.max(0, raw.avgPageKb) +
+    damShare * damMiss * Math.max(0, raw.avgAssetKb);
+  const egressGbMonth = (monthlyRequests * originKbPerRequest) / 1024 / 1024;
+
   const tokensPerMonth = iqEnabled
     ? sessionsPerDay *
       30 *
@@ -115,6 +136,10 @@ export function normalizeInputs(
     authorRps,
     ringRps,
     concurrentSessions: uPeak,
+    peakUsersSource: busyHour ? "busyHour" : "input",
+    damShare,
+    sessionBytesKbEff,
+    egressGbMonth,
     sessionsPerDay,
     damStorageGiMonth,
     searchIndexGi,

@@ -4,14 +4,18 @@ import {
   MarkerType,
   MiniMap,
   ReactFlow,
+  applyNodeChanges,
+  useReactFlow,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeProps,
   Handle,
   Position,
+  ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CloudProvider } from "../engine/cloudProviders";
 import type {
   ComponentId,
@@ -44,6 +48,8 @@ const GAP_Y = 56;
 const MAX_PER_ROW = 4;
 const CANVAS_PAD = 40;
 
+type Pos = { x: number; y: number };
+
 /** Preferred top→bottom bands; wide bands wrap into sub-rows of MAX_PER_ROW. */
 const LAYOUT_BANDS: ComponentId[][] = [
   ["users", "dnsGslb"],
@@ -58,7 +64,14 @@ const LAYOUT_BANDS: ComponentId[][] = [
   ["imageProcessor", "persistencePool", "persistenceNode", "persistenceMetrics"],
   ["damPluginGoogleVision", "damPluginKaltura"],
   ["loggingSidecar", "runtimeController", "licenseManager", "prereqsChecker"],
-  ["secretsKms", "observability", "backupDr", "containerRegistry", "egressNat", "mcpService"],
+  [
+    "secretsKms",
+    "observability",
+    "backupDr",
+    "containerRegistry",
+    "egressNat",
+    "mcpService",
+  ],
 ];
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -67,11 +80,9 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-function layoutNodes(
-  ids: ComponentId[],
-): Record<string, { x: number; y: number }> {
+function layoutNodes(ids: ComponentId[]): Record<string, Pos> {
   const idSet = new Set(ids);
-  const pos: Record<string, { x: number; y: number }> = {};
+  const pos: Record<string, Pos> = {};
   const placed = new Set<ComponentId>();
 
   const rows: ComponentId[][] = [];
@@ -80,13 +91,11 @@ function layoutNodes(
     if (!present.length) continue;
     for (const row of chunk(present, MAX_PER_ROW)) rows.push(row);
   }
-  // leftovers not in LAYOUT_BANDS
   const leftovers = ids.filter((id) => !LAYOUT_BANDS.some((b) => b.includes(id)));
   for (const row of chunk(leftovers, MAX_PER_ROW)) {
     if (row.length) rows.push(row);
   }
 
-  // Width of widest row — used to center narrower rows
   const maxCols = Math.max(1, ...rows.map((r) => r.length));
   const rowPitch = NODE_W + GAP_X;
   const colPitch = NODE_H + GAP_Y;
@@ -102,13 +111,14 @@ function layoutNodes(
     });
   });
 
-  // Safety: any id still missing
   let orphan = 0;
   for (const id of ids) {
     if (placed.has(id)) continue;
     pos[id] = {
       x: CANVAS_PAD + (orphan % MAX_PER_ROW) * rowPitch,
-      y: CANVAS_PAD + (rows.length + Math.floor(orphan / MAX_PER_ROW)) * colPitch,
+      y:
+        CANVAS_PAD +
+        (rows.length + Math.floor(orphan / MAX_PER_ROW)) * colPitch,
     };
     orphan += 1;
   }
@@ -130,7 +140,11 @@ function UtilNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} />
       <div className="plane-badge">
-        {d.plane === "hcl" ? "HCL DX" : d.plane === "platform" ? "Platform" : "Client"}
+        {d.plane === "hcl"
+          ? "HCL DX"
+          : d.plane === "platform"
+            ? "Platform"
+            : "Client"}
       </div>
       <div className="title">{d.label}</div>
       <div className="meta">
@@ -144,21 +158,59 @@ function UtilNode({ data }: NodeProps) {
 
 const nodeTypes = { util: UtilNode };
 
-export function Simulator({
+function topologyKey(
+  product: Product,
+  productionPlatform: boolean,
+  toggles: ComponentToggles,
+): string {
+  return `${product}|${productionPlatform}|${Object.entries(toggles)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+    .sort()
+    .join(",")}`;
+}
+
+function SimulatorCanvas({
   product,
   inputs,
   toggles,
   costs,
   cloudProvider,
-  result,
+  result: _result,
   onInputs,
   onToggles,
 }: Props) {
+  void _result;
+  const { fitView } = useReactFlow();
   const [selected, setSelected] = useState<ComponentId | null>(null);
   const [replicaOverrides, setReplicaOverrides] = useState<
     Partial<Record<string, number>>
   >({});
   const [enableCdn, setEnableCdn] = useState(true);
+  const liveResultRef = useRef<SizingResult | null>(null);
+
+  /**
+   * Set a manual replica count (add or remove). The engine clamps to ≥ 1 and
+   * flags counts below the availability floor. Returning to the recommended
+   * count clears the override, so later input changes resize it again.
+   */
+  const setReplicas = useCallback(
+    (id: ComponentId, next: number) => {
+      setReplicaOverrides((prev) => {
+        const rec = liveResultRef.current?.nodes.find((n) => n.id === id)
+          ?.recommendedReplicas;
+        const copy = { ...prev };
+        if (next === rec) delete copy[id];
+        else copy[id] = Math.max(1, next);
+        return copy;
+      });
+    },
+    [],
+  );
+  /** User-dragged positions — survive sizing recalcs until Reset layout */
+  const [posOverrides, setPosOverrides] = useState<Record<string, Pos>>({});
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const topoKeyRef = useRef("");
 
   const liveResult = useMemo(
     () =>
@@ -173,46 +225,107 @@ export function Simulator({
       }),
     [product, inputs, toggles, costs, cloudProvider, replicaOverrides, enableCdn],
   );
+  liveResultRef.current = liveResult;
 
-  const { nodes: topoNodes } = selectTopology(
-    product,
-    toggles,
-    inputs.productionPlatform,
+  const topology = useMemo(
+    () => selectTopology(product, toggles, inputs.productionPlatform),
+    [product, toggles, inputs.productionPlatform],
+  );
+  const topoNodes = topology.nodes;
+  const topoKey = topologyKey(product, inputs.productionPlatform, toggles);
+
+  const nodeIds = useMemo(() => {
+    const ids = topoNodes.map((n) => n.id);
+    return Array.from(new Set<ComponentId>(["users", "cdn", ...ids]));
+  }, [topoNodes]);
+
+  const autoLayout = useMemo(() => layoutNodes(nodeIds), [nodeIds]);
+
+  const makeNodes = useCallback(
+    (overrides: Record<string, Pos>, sizing: SizingResult): Node[] => {
+      const sizedMap = new Map(sizing.nodes.map((n) => [n.id, n]));
+      const planeMap = new Map(topoNodes.map((n) => [n.id, n.plane]));
+      const labelMap = new Map(topoNodes.map((n) => [n.id, n.label]));
+
+      return nodeIds.map((id) => {
+        const sized = sizedMap.get(id);
+        const label = sized?.label ?? labelMap.get(id) ?? id;
+        const plane = sized?.plane ?? planeMap.get(id) ?? "client";
+        return {
+          id,
+          type: "util",
+          position: overrides[id] ?? autoLayout[id] ?? { x: 0, y: 0 },
+          width: NODE_W,
+          height: NODE_H,
+          style: { width: NODE_W, height: NODE_H },
+          draggable: true,
+          data: {
+            label,
+            plane,
+            utilBand: sized?.utilBand ?? "n/a",
+            util: sized?.util ?? 0,
+            replicas: sized?.replicas ?? 0,
+            offeredRps:
+              sized?.offeredRps ??
+              (id === "users" || id === "cdn"
+                ? sizing.demand.frontDoorRps
+                : 0),
+          },
+        };
+      });
+    },
+    [nodeIds, autoLayout, topoNodes],
   );
 
-  const flowNodes: Node[] = useMemo(() => {
-    const ids = topoNodes.map((n) => n.id);
-    const withEntry = Array.from(
-      new Set<ComponentId>(["users", "cdn", ...ids]),
-    );
-    const pos = layoutNodes(withEntry);
-    const sizedMap = new Map(liveResult.nodes.map((n) => [n.id, n]));
-    const planeMap = new Map(topoNodes.map((n) => [n.id, n.plane]));
+  // Full layout rebuild only when topology membership changes (or first mount).
+  useEffect(() => {
+    const prev = topoKeyRef.current;
+    const topoChanged = !!prev && prev !== topoKey;
+    topoKeyRef.current = topoKey;
+    if (topoChanged) setPosOverrides({});
+    setNodes(makeNodes(topoChanged ? {} : posOverrides, liveResult));
+    if (topoChanged) {
+      queueMicrotask(() => fitView({ padding: 0.18, maxZoom: 0.95 }));
+    }
+    // posOverrides intentionally omitted — drag must not rebuild via this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topoKey, makeNodes]);
 
-    return withEntry.map((id) => {
-      const sized = sizedMap.get(id);
-      const label =
-        sized?.label ?? topoNodes.find((n) => n.id === id)?.label ?? id;
-      const plane = sized?.plane ?? planeMap.get(id) ?? "client";
-      return {
-        id,
-        type: "util",
-        position: pos[id],
-        data: {
-          label,
-          plane,
-          utilBand: sized?.utilBand ?? "n/a",
-          util: sized?.util ?? 0,
-          replicas: sized?.replicas ?? 0,
-          offeredRps:
-            sized?.offeredRps ??
-            (id === "users" || id === "cdn"
-              ? liveResult.demand.frontDoorRps
-              : 0),
-        },
-      };
+  // Patch util/label data in place when sizing changes; keep current positions.
+  useEffect(() => {
+    setNodes((nds) => {
+      if (!nds.length) return makeNodes(posOverrides, liveResult);
+      const sizedMap = new Map(liveResult.nodes.map((n) => [n.id, n]));
+      return nds.map((n) => {
+        const sized = sizedMap.get(n.id as ComponentId);
+        const prev = n.data as {
+          label: string;
+          plane: ComponentPlane;
+          utilBand: string;
+          util: number;
+          replicas: number;
+          offeredRps: number;
+        };
+        return {
+          ...n,
+          data: {
+            ...prev,
+            label: sized?.label ?? prev.label,
+            plane: sized?.plane ?? prev.plane,
+            utilBand: sized?.utilBand ?? "n/a",
+            util: sized?.util ?? 0,
+            replicas: sized?.replicas ?? 0,
+            offeredRps:
+              sized?.offeredRps ??
+              (n.id === "users" || n.id === "cdn"
+                ? liveResult.demand.frontDoorRps
+                : prev.offeredRps),
+          },
+        };
+      });
     });
-  }, [topoNodes, liveResult]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveResult]);
 
   const flowEdges: Edge[] = useMemo(
     () =>
@@ -229,7 +342,25 @@ export function Simulator({
     [liveResult.edges],
   );
 
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes((nds) => applyNodeChanges(changes, nds));
+  }, []);
+
+  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
+    setPosOverrides((prev) => ({
+      ...prev,
+      [node.id]: { x: node.position.x, y: node.position.y },
+    }));
+  }, []);
+
+  const resetLayout = useCallback(() => {
+    setPosOverrides({});
+    setNodes(makeNodes({}, liveResult));
+    queueMicrotask(() => fitView({ padding: 0.18, maxZoom: 0.95 }));
+  }, [makeNodes, liveResult, fitView]);
+
   const selectedNode = liveResult.nodes.find((n) => n.id === selected);
+  const hasCustomLayout = Object.keys(posOverrides).length > 0;
 
   return (
     <div className="sim-wrap">
@@ -259,6 +390,15 @@ export function Simulator({
           />
           CDN enabled
         </label>
+        <button
+          type="button"
+          className="btn"
+          onClick={resetLayout}
+          disabled={!hasCustomLayout}
+          title="Restore auto band layout and fit view"
+        >
+          Reset layout
+        </button>
         <div className="legend-row">
           <span className="plane-tag hcl">HCL DX</span>
           <span className="plane-tag platform">Platform</span>
@@ -275,6 +415,7 @@ export function Simulator({
                 onInputs(next.inputs);
                 onToggles(next.toggles);
                 setReplicaOverrides({});
+                setPosOverrides({});
               }}
             >
               {p.label}
@@ -285,26 +426,37 @@ export function Simulator({
 
       <div className="sim-canvas">
         <ReactFlow
-          nodes={flowNodes}
+          colorMode="dark"
+          nodes={nodes}
           edges={flowEdges}
           nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onNodeDragStop={onNodeDragStop}
           fitView
           fitViewOptions={{ padding: 0.18, maxZoom: 0.95, minZoom: 0.15 }}
           minZoom={0.15}
           maxZoom={1.4}
           nodesDraggable
           nodesConnectable={false}
+          elementsSelectable
           onNodeClick={(_, n) => setSelected(n.id as ComponentId)}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={18} color="#1e2836" />
-          <Controls />
+          <Controls showInteractive={false} />
           <MiniMap
+            pannable
+            zoomable
+            bgColor="#243044"
+            maskColor="rgba(0, 0, 0, 0.45)"
+            nodeStrokeWidth={1}
+            nodeStrokeColor="#e7ecf3"
+            nodeBorderRadius={3}
             nodeColor={(n) => {
               const plane = (n.data as { plane?: string })?.plane;
-              if (plane === "hcl") return "#3d9cf0";
-              if (plane === "platform") return "#c4a35a";
-              return "#6b7c8f";
+              if (plane === "hcl") return "#4aa3f0";
+              if (plane === "platform") return "#d4b56a";
+              return "#9aabbd";
             }}
           />
         </ReactFlow>
@@ -322,10 +474,16 @@ export function Simulator({
           <p className="muted">
             Offered {selectedNode.offeredRps.toFixed(2)} rps · capacity{" "}
             {selectedNode.capacityRps.toFixed(0)} · util{" "}
-            {(selectedNode.util * 100).toFixed(1)}% · {selectedNode.replicas}{" "}
-            replicas · {selectedNode.cpuCores.toFixed(2)} CPU ·{" "}
+            {(selectedNode.util * 100).toFixed(1)}% (p90{" "}
+            {(selectedNode.utilP90 * 100).toFixed(0)}%) · {selectedNode.replicas}{" "}
+            replicas
+            {selectedNode.replicas !== selectedNode.recommendedReplicas &&
+              ` (recommended ${selectedNode.recommendedReplicas})`}{" "}
+            · {selectedNode.cpuCores.toFixed(2)} CPU ·{" "}
             {selectedNode.memGi.toFixed(1)} Gi · $
             {selectedNode.infraCostMonth.toFixed(0)}/mo
+            {selectedNode.p95Ms != null &&
+              ` · est. p95 ${Number.isFinite(selectedNode.p95Ms) ? `${Math.round(selectedNode.p95Ms)}ms` : "unbounded"}`}
           </p>
           {selectedNode.notes.length > 0 && (
             <ul className="muted">
@@ -338,14 +496,28 @@ export function Simulator({
             <button
               type="button"
               className="btn primary"
-              onClick={() =>
-                setReplicaOverrides({
-                  ...replicaOverrides,
-                  [selectedNode.id]: selectedNode.replicas + 1,
-                })
-              }
+              disabled={!selectedNode.scalable}
+              title={selectedNode.scalable ? undefined : "Fixed component — replicas are not scaled"}
+              onClick={() => setReplicas(selectedNode.id, selectedNode.replicas + 1)}
             >
               Add replica
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!selectedNode.scalable || selectedNode.replicas <= 1}
+              title={
+                !selectedNode.scalable
+                  ? "Fixed component — replicas are not scaled"
+                  : selectedNode.replicas <= 1
+                    ? "Already at 1 replica"
+                    : selectedNode.replicas <= selectedNode.minSafeReplicas
+                      ? `Goes below the availability floor of ${selectedNode.minSafeReplicas}`
+                      : undefined
+              }
+              onClick={() => setReplicas(selectedNode.id, selectedNode.replicas - 1)}
+            >
+              Remove replica
             </button>
             <button
               type="button"
@@ -364,17 +536,27 @@ export function Simulator({
             >
               Reset fixes
             </button>
+            <button type="button" className="btn" onClick={resetLayout}>
+              Reset layout
+            </button>
           </div>
         </div>
       )}
 
       {!selectedNode && (
         <p className="muted" style={{ marginTop: 8 }}>
-          Same engine as estimator (profile {result.profileId}). Blue =
-          HCL DX · gold/dashed = platform · grey = client. Origin WAF sits
-          after CDN.
+          Drag nodes to rearrange. <strong>Reset layout</strong> restores the
+          auto band layout. Blue = HCL DX · gold = platform · grey = client.
         </p>
       )}
     </div>
+  );
+}
+
+export function Simulator(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <SimulatorCanvas {...props} />
+    </ReactFlowProvider>
   );
 }

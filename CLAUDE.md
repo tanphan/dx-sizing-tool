@@ -1,0 +1,61 @@
+# CLAUDE.md — DX Sizing Tool
+
+Vite + React + TypeScript app that sizes and costs HCL DX deployments (DXCN Core or DX Compose webEngine). Hosted on GitHub Pages: https://tanphan.github.io/dx-sizing-tool/
+
+**Read [docs/SPEC.md](docs/SPEC.md) before changing sizing behaviour.** It is the source of truth for formulas, defaults and the backlog.
+
+## Commands
+
+```bash
+npm install
+npm run dev -- --host 0.0.0.0     # http://127.0.0.1:5173/
+npm test                          # vitest, engine unit tests
+npx tsc --noEmit -p .             # typecheck
+npm run build                     # production bundle → dist/ (base /dx-sizing-tool/)
+```
+
+Run `npm test` and the typecheck before every commit. CI runs tests, then builds and deploys.
+
+## Layout
+
+- `src/engine/`: pure sizing kernel, no React. Entry point is `runSizing()`.
+  - `demand.ts` (inputs → RPS), `sizeNode.ts` (per-component sizing, edges), `runSizing.ts` (orchestration, costs, warnings)
+  - `policy.ts`: tool assumptions. `hclGuidance.ts`: HCL-sourced figures. `defaults.ts`: input defaults.
+  - `helm.ts`: Helm overlay. `calibrate.ts`, `liveCompare.ts`: lab data paths.
+- `src/profiles/*.json`: capacity constants per component, tagged by CF release.
+- `src/catalogs/`: DXCN / Compose topology and toggle forcing.
+- `src/components/`: Estimator, Simulator, Calibrate, Live panels. UI only, no sizing math.
+- `docs/`: SPEC.md, user guide (`user-guide.html` is the source of the PDF).
+
+## Rules for engine changes
+
+1. **Keep the engine pure.** No DOM or React imports under `src/engine/`. UI components call `runSizing()` and display results; they never re-derive numbers.
+2. **Put every constant in the right home.** HCL-documented values go in `hclGuidance.ts` with a doc link. Tool assumptions go in `policy.ts`. Input defaults go in `defaults.ts`. Never inline magic numbers in formulas.
+3. **Don't invent environment data.** Inputs that need measurements (baseline p95, response sizes, token overhead) default to 0 = off.
+4. **Test every formula change** in `src/engine/engine.test.ts`. Use a hand-computed expected value and put the arithmetic in a comment.
+5. **Update docs/SPEC.md** (§4 inputs, §6 formulas, §10 decision log) in the same change. If the change is user-visible, also update `docs/user-guide.html` and regenerate the PDF (see below).
+6. **New `UsageInputs` fields** need a default in `defaults.ts`. `runSizing()` merges defaults over saved inputs, so older localStorage state keeps working.
+7. **Helm key names** must match the `hcl-dx-deployment` chart `values.yaml`. Verify them against the chart before adding keys; don't guess.
+
+## Conventions
+
+- Component ids are camelCase (`ComponentId` in `types.ts`); Helm names are mapped in `helm.ts`.
+- Utilization bands: green < 70%, amber 70–90%, red ≥ 90% (p50 util).
+- The UI and outputs always carry the disclaimer: estimation aid, not an HCL official SCU.
+- No customer names or customer measurements in code, profiles, tests or docs. This repo is public.
+
+## Regenerating the user guide PDF
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --no-pdf-header-footer \
+  --print-to-pdf="$PWD/docs/HCL-DX-Sizing-Tool-User-Guide.pdf" "file://$PWD/docs/user-guide.html"
+```
+
+## Deploy
+
+A push to `main` triggers `.github/workflows/deploy-pages.yml`: `npm ci`, test, build with `VITE_BASE=/dx-sizing-tool/`, deploy to Pages (the source must be "GitHub Actions").
+
+## Gotchas
+
+- This repo is nested inside the DXAutomation repo, which also tracks an older copy of these files. Commit and push from **this** directory (`origin` = `tanphan/dx-sizing-tool`).
+- Simulator replica overrides are Simulator-local state; the Estimator always shows recommended counts.

@@ -4,6 +4,7 @@ import { cloudProviders } from "../engine/cloudProviders";
 import type { ComponentToggles, Product, UnitCosts, UsageInputs } from "../engine/types";
 import { getCatalog } from "../catalogs";
 import { scenarioPresets, applyScenario } from "../scenarios";
+import { AVAILABILITY_TARGETS } from "../engine/policy";
 
 interface Props {
   product: Product;
@@ -297,8 +298,24 @@ export function InputForm({
           <input type="number" value={inputs.azCount} onChange={num(inputs, "azCount", onInputs)} />
         </Field>
         <Field
+          label="Target availability"
+          hint="Sets the replica floor: <99.9% allows 1 replica (lab); 99.9% ≥2; 99.95% adds N+1; 99.99% ≥3 + N+1"
+        >
+          <select
+            id="targetAvailability"
+            value={inputs.targetAvailability}
+            onChange={(e) => onInputs({ ...inputs, targetAvailability: e.target.value })}
+          >
+            {AVAILABILITY_TARGETS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
           label="Target p95 (ms)"
-          hint="Portal latency SLO — context for headroom (not hard-coded yet)"
+          hint="Page latency SLO. With a baseline p95 (Advanced), Core/webEngine scale out until est. p95 ≤ target"
         >
           <input
             type="number"
@@ -457,6 +474,102 @@ export function InputForm({
             value={inputs.sessionBytesKb}
             onChange={num(inputs, "sessionBytesKb", onInputs)}
           />
+        </Field>
+        <Field
+          label="Auth token overhead (KB)"
+          hint="Extra session memory per authenticated user (LTPA / JWT subject). Weighted by % authenticated; 0 = off"
+        >
+          <input
+            type="number"
+            min={0}
+            value={inputs.authTokenKb}
+            onChange={num(inputs, "authTokenKb", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Target CPU util"
+          hint="Size replicas so peak util ≤ this (0–1). Plan default 0.6"
+        >
+          <input
+            type="number"
+            step="0.05"
+            min={0.1}
+            max={1}
+            value={inputs.targetCpuUtil}
+            onChange={num(inputs, "targetCpuUtil", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Target memory util"
+          hint="Memory headroom for components other than Core/webEngine (fixed HCL pods). Default 0.7"
+        >
+          <input
+            type="number"
+            step="0.05"
+            min={0.1}
+            max={1}
+            value={inputs.targetMemUtil}
+            onChange={num(inputs, "targetMemUtil", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Target disk util"
+          hint="Provision demand-driven storage (DAM, index, DB, RWX) to this fill level. Default 0.7"
+        >
+          <input
+            type="number"
+            step="0.05"
+            min={0.1}
+            max={1}
+            value={inputs.targetDiskUtil}
+            onChange={num(inputs, "targetDiskUtil", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Busy-hour factor"
+          hint="Peak ÷ average concurrency. Used only when peak users is 0 and DAU is set. Default 4"
+        >
+          <input
+            type="number"
+            step="0.5"
+            min={1}
+            value={inputs.busyHourFactor}
+            onChange={num(inputs, "busyHourFactor", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Baseline p95 (ms)"
+          hint="Measured page p95 at low load (e.g. Locust with few users). Enables the latency check; 0 = off"
+        >
+          <input
+            type="number"
+            min={0}
+            value={inputs.baselineP95Ms}
+            onChange={num(inputs, "baselineP95Ms", onInputs)}
+          />
+        </Field>
+        <Field
+          label="Avg page / asset KB"
+          hint="Origin response sizes for egress cost (pages, DAM assets). 0 = egress not estimated"
+        >
+          <span style={{ display: "flex", gap: 4 }}>
+            <input
+              style={{ width: 64 }}
+              type="number"
+              min={0}
+              aria-label="Average page KB"
+              value={inputs.avgPageKb}
+              onChange={num(inputs, "avgPageKb", onInputs)}
+            />
+            <input
+              style={{ width: 64 }}
+              type="number"
+              min={0}
+              aria-label="Average asset KB"
+              value={inputs.avgAssetKb}
+              onChange={num(inputs, "avgAssetKb", onInputs)}
+            />
+          </span>
         </Field>
       </details>
 

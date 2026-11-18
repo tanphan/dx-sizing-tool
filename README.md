@@ -25,6 +25,12 @@ npm run build
 # VITE_BASE=/dx-sizing-tool/ npm run build && npx vite preview --base /dx-sizing-tool/
 ```
 
+## Docs
+
+- [docs/SPEC.md](docs/SPEC.md): sizing model, formulas, assumption sources, backlog
+- [CLAUDE.md](CLAUDE.md): contributor / Claude Code guide (commands, rules for engine changes)
+- [docs/HCL-DX-Sizing-Tool-User-Guide.pdf](docs/HCL-DX-Sizing-Tool-User-Guide.pdf): user guide
+
 ## Layout
 
 - `src/engine/` — pure sizing kernel (`normalizeInputs`, `runSizing`, Helm hints, Locust calibrate, live compare)

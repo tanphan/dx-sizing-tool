@@ -47,6 +47,13 @@ export function Estimator({ result }: Props) {
           <div className="k">AI tokens $/mo</div>
           <div className="v">{money(result.costs.tokenMonth + result.costs.llmInfraMonth)}</div>
         </div>
+        {result.costs.egressGbMonth > 0 && (
+          <div className="card">
+            <div className="k">Egress $/mo</div>
+            <div className="v">{money(result.costs.egressMonth)}</div>
+            <div className="k">{Math.round(result.costs.egressGbMonth).toLocaleString()} GB origin</div>
+          </div>
+        )}
         <div className="card">
           <div className="k">Total $/mo</div>
           <div className="v">{money(result.costs.totalMonth)}</div>
@@ -73,7 +80,8 @@ export function Estimator({ result }: Props) {
           Concurrent {Math.round(result.sessions.concurrentSessions).toLocaleString()} ·{" "}
           {Math.round(result.sessions.sessionsPerDay).toLocaleString()}/day · footprint{" "}
           {result.sessions.sessionFootprintMi.toFixed(0)} Mi · timeout{" "}
-          {result.sessions.recommendedTimeoutMin} min · sticky sessions for HAProxy
+          {result.sessions.recommendedTimeoutMin} min · sticky sessions for HAProxy ·
+          peak users {result.demand.peakUsersSource === "busyHour" ? "from DAU × busy-hour factor" : "as entered"}
           {result.sessions.podCpu != null && (
             <>
               {" "}
@@ -158,7 +166,9 @@ export function Estimator({ result }: Props) {
               <th>Rep</th>
               <th>Offered</th>
               <th>Cap</th>
-              <th>Util</th>
+              <th title="p50 utilization at peak">Util</th>
+              <th title="p90 utilization given profile uncertainty">p90</th>
+              <th title="Estimated page p95 at peak (needs baseline p95)">p95 ms</th>
               <th>CPU</th>
               <th>Mem Gi</th>
               <th>Stor Gi</th>
@@ -184,11 +194,20 @@ export function Estimator({ result }: Props) {
                   />
                   {n.label}
                 </td>
-                <td>{n.replicas}</td>
+                <td title={n.replicas !== n.recommendedReplicas ? `Recommended ${n.recommendedReplicas}` : undefined}>
+                  {n.replicas}
+                  {n.replicas !== n.recommendedReplicas && "*"}
+                </td>
                 <td>{n.offeredRps.toFixed(1)}</td>
                 <td>{n.capacityRps > 1e5 ? "—" : n.capacityRps.toFixed(0)}</td>
                 <td>
                   {n.utilBand === "n/a" ? "—" : `${(n.util * 100).toFixed(0)}%`}
+                </td>
+                <td className={n.utilP90 >= 0.9 ? "warn-text" : undefined}>
+                  {n.utilBand === "n/a" ? "—" : `${(n.utilP90 * 100).toFixed(0)}%`}
+                </td>
+                <td>
+                  {n.p95Ms == null ? "—" : Number.isFinite(n.p95Ms) ? Math.round(n.p95Ms) : "∞"}
                 </td>
                 <td>{n.cpuCores.toFixed(2)}</td>
                 <td>{n.memGi.toFixed(1)}</td>
@@ -200,6 +219,11 @@ export function Estimator({ result }: Props) {
           </tbody>
         </table>
       </div>
+
+      <p className="muted">
+        p90 util reflects capacity uncertainty: wider for default profiles than lab-calibrated
+        ones. p95 ms appears for Core / webEngine once a baseline p95 is entered.
+      </p>
 
       <p className="disclaimer">
         Estimation aid only — not an HCL official SCU or sizing guarantee. Profile{" "}

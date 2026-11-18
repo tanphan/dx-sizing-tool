@@ -1,9 +1,10 @@
 import type { CloudProvider } from "./cloudProviders";
 import { cloudProviders } from "./cloudProviders";
-import { HOURS_PER_MONTH } from "./defaults";
+import { defaultUsageInputs, HOURS_PER_MONTH } from "./defaults";
 import { normalizeInputs } from "./demand";
 import { buildHelmHints } from "./helm";
 import { HCL_CORE_POD, HCL_SIZING_DOC } from "./hclGuidance";
+import { availabilityPolicy } from "./policy";
 import { getDefaultProfileId, loadProfile } from "./profiles";
 import { edgeRps, getProfile, sizeNode } from "./sizeNode";
 import { selectTopology } from "./topology";
@@ -22,6 +23,7 @@ export interface RunSizingArgs {
   costs: UnitCosts;
   profileId?: string;
   cloudProvider?: CloudProvider;
+  /** Manual replica counts per component id (Simulator add / remove). Either direction. */
   replicaOverrides?: Partial<Record<string, number>>;
   enableCdn?: boolean;
 }
@@ -44,12 +46,13 @@ export function runSizing(args: RunSizingArgs): SizingResult {
       }
     : args.costs;
 
+  // Fill fields missing from older saved state (localStorage) with defaults.
+  const merged: UsageInputs = { ...defaultUsageInputs, ...args.inputs };
+  if (args.inputs.damCacheHitRatio == null) merged.damCacheHitRatio = merged.cacheHitRatio;
   const inputs: UsageInputs = {
-    ...args.inputs,
-    cacheHitRatio: args.enableCdn === false ? 0 : args.inputs.cacheHitRatio,
-    damCacheHitRatio:
-      args.enableCdn === false ? 0 : (args.inputs.damCacheHitRatio ?? args.inputs.cacheHitRatio),
-    damRequestShare: args.inputs.damRequestShare ?? 0,
+    ...merged,
+    cacheHitRatio: args.enableCdn === false ? 0 : merged.cacheHitRatio,
+    damCacheHitRatio: args.enableCdn === false ? 0 : merged.damCacheHitRatio,
   };
 
   const { nodes: topoNodes, edges: topoEdges, toggles } = selectTopology(
@@ -87,68 +90,52 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   if (inputs.productionPlatform && (!toggles.waf || !toggles.cloudLb)) {
     warnings.push("Production platform expects origin WAF + Cloud LB");
   }
-
-  const coreId = args.product === "dxcn" ? "core" : "webEngine";
-
-  const sized = topoNodes
-    .filter((n) => n.id !== "users" && n.id !== "cdn")
-    .map((n) => {
-      const profile = getProfile(capacity, n.id);
-      const sku = cloud?.skus[n.id];
-      const label = sku ? `${n.label} · ${sku}` : n.label;
-      return sizeNode(
-        n.id,
-        label,
-        n.plane,
-        demand,
-        profile,
-        costs,
-        inputs,
-      );
-    });
-
-  const coreNode = sized.find((n) => n.id === coreId);
-  const coreReplicas = coreNode?.replicas ?? 2;
-  const sidecarIdx = sized.findIndex((n) => n.id === "loggingSidecar");
-  if (sidecarIdx >= 0) {
-    const profile = getProfile(capacity, "loggingSidecar");
-    const n = topoNodes.find((t) => t.id === "loggingSidecar")!;
-    sized[sidecarIdx] = sizeNode(
-      "loggingSidecar",
-      sized[sidecarIdx].label,
-      n.plane,
-      demand,
-      profile,
-      costs,
-      inputs,
-      coreReplicas,
+  const avail = availabilityPolicy(inputs.targetAvailability);
+  if (!avail.production) {
+    warnings.push(
+      `Availability target ${inputs.targetAvailability}: single replicas allowed — not a production sizing`,
+    );
+  } else if (avail.minReplicas >= 3 && inputs.azCount < 3) {
+    warnings.push(
+      `Availability target ${inputs.targetAvailability} usually needs 3+ AZs; AZ count is ${inputs.azCount}`,
+    );
+  }
+  if (demand.peakUsersSource === "busyHour") {
+    warnings.push(
+      `Peak users derived from DAU × busy-hour factor ${inputs.busyHourFactor}: ${Math.round(demand.concurrentSessions).toLocaleString()} concurrent`,
     );
   }
 
-  if (args.replicaOverrides) {
-    for (const node of sized) {
-      const override = args.replicaOverrides[node.id];
-      if (override != null && override > node.replicas) {
-        const scale = override / Math.max(1, node.replicas);
-        node.replicas = override;
-        node.cpuCores *= scale;
-        node.memGi *= scale;
-        node.capacityRps =
-          (getProfile(capacity, node.id)?.rpsPerReplica ?? 0) * override;
-        node.util =
-          node.capacityRps > 0 ? node.offeredRps / node.capacityRps : 0;
-        node.utilBand =
-          node.util < 0.7 ? "green" : node.util < 0.9 ? "amber" : "red";
-        node.notes = [...node.notes, `Manual replica override → ${override}`];
-        node.infraCostMonth =
-          node.cpuCores * HOURS_PER_MONTH * costs.vcpuPerHour +
-          node.memGi * HOURS_PER_MONTH * costs.memGiBPerHour +
-          node.storageGi * costs.storageGiBPerMonth;
-        if (node.licenseCostMonth > 0) {
-          node.licenseCostMonth = override * costs.dxLicensePerNodeMonth;
-        }
-      }
-    }
+  const coreId = args.product === "dxcn" ? "core" : "webEngine";
+  const overrides = args.replicaOverrides ?? {};
+
+  // Size the portal runtime first: the logging sidecar runs one per replica.
+  const ordered = topoNodes
+    .filter((n) => n.id !== "users" && n.id !== "cdn")
+    .sort((a, b) => Number(b.id === coreId) - Number(a.id === coreId));
+  const byId = new Map<string, SizingResult["nodes"][number]>();
+  for (const n of ordered) {
+    const sku = cloud?.skus[n.id];
+    byId.set(
+      n.id,
+      sizeNode(n.id, sku ? `${n.label} · ${sku}` : n.label, n.plane, demand,
+        getProfile(capacity, n.id), costs, inputs, {
+          confidence: capacity.confidence,
+          forcedReplicas: overrides[n.id],
+          sidecarOfReplicas: byId.get(coreId)?.replicas,
+        }),
+    );
+  }
+  // Keep catalog order for display.
+  const sized = topoNodes
+    .filter((n) => byId.has(n.id))
+    .map((n) => byId.get(n.id)!);
+
+  const belowFloor = sized.filter((n) => n.scalable && n.replicas < n.minSafeReplicas);
+  if (belowFloor.length) {
+    warnings.push(
+      `Below availability floor: ${belowFloor.map((n) => `${n.label} (${n.replicas} < ${n.minSafeReplicas})`).join(", ")}`,
+    );
   }
 
   const offeredById = new Map(sized.map((n) => [n.id, n.offeredRps]));
@@ -171,6 +158,8 @@ export function runSizing(args: RunSizingArgs): SizingResult {
     demand.iqEnabled && costs.selfHostLlmRamGiB > 0
       ? costs.selfHostLlmRamGiB * HOURS_PER_MONTH * costs.selfHostLlmRamGiBHour
       : 0;
+  // Origin egress (0 unless response sizes are entered)
+  const egressMonth = demand.egressGbMonth * costs.egressGb;
 
   const red = sized.filter((n) => n.utilBand === "red");
   if (red.length) {
@@ -180,7 +169,7 @@ export function runSizing(args: RunSizingArgs): SizingResult {
   }
 
   const sessionFootprintMi =
-    (demand.concurrentSessions * inputs.sessionBytesKb) / 1024;
+    (demand.concurrentSessions * demand.sessionBytesKbEff) / 1024;
 
   return {
     product: args.product,
@@ -210,7 +199,9 @@ export function runSizing(args: RunSizingArgs): SizingResult {
       licenseMonth,
       tokenMonth,
       llmInfraMonth,
-      totalMonth: infraMonth + licenseMonth + tokenMonth + llmInfraMonth,
+      egressMonth,
+      egressGbMonth: demand.egressGbMonth,
+      totalMonth: infraMonth + licenseMonth + tokenMonth + llmInfraMonth + egressMonth,
       vcpuHours: sized.reduce((s, n) => s + n.cpuCores * HOURS_PER_MONTH, 0),
       memGiBHours: sized.reduce((s, n) => s + n.memGi * HOURS_PER_MONTH, 0),
       storageGi: sized.reduce((s, n) => s + n.storageGi, 0),

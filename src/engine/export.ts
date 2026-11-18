@@ -9,9 +9,12 @@ export function resultToCsv(result: SizingResult): string {
   const header = [
     "component",
     "replicas",
+    "recommended_replicas",
     "offered_rps",
     "capacity_rps",
     "util",
+    "util_p90",
+    "p95_ms",
     "cpu_cores",
     "mem_gi",
     "storage_gi",
@@ -20,11 +23,14 @@ export function resultToCsv(result: SizingResult): string {
   ].join(",");
   const rows = result.nodes.map((n) =>
     [
-      n.label,
+      `"${n.label.replace(/"/g, '""')}"`,
       n.replicas,
+      n.recommendedReplicas,
       n.offeredRps.toFixed(2),
       n.capacityRps.toFixed(2),
       (n.util * 100).toFixed(1),
+      (n.utilP90 * 100).toFixed(1),
+      n.p95Ms != null && Number.isFinite(n.p95Ms) ? n.p95Ms.toFixed(0) : "",
       n.cpuCores.toFixed(2),
       n.memGi.toFixed(2),
       n.storageGi.toFixed(2),

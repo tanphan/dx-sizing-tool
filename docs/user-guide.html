@@ -281,7 +281,8 @@ npm run build     # production bundle → dist/</pre>
     <tr><td>DAM request share</td><td>Fraction of all requests that are DAM assets (0–1). The HCL rendering mix uses 0.3. Leave at 0 to derive it from attach rate × assets/page.</td></tr>
     <tr><td>DAM attach rate &amp; assets / page</td><td>Used only when DAM request share is 0: share = a·n / (1 + a·n)</td></tr>
     <tr><td>AZ count</td><td>HA replica floor</td></tr>
-    <tr><td>Target p95 (ms)</td><td>For reference; not used in the sizing math yet</td></tr>
+    <tr><td>Target availability</td><td>Replica floor: below 99.9% allows a single replica (lab sizing); 99.9% ≥ 2; 99.95% adds one spare (N+1); 99.99% ≥ 3 plus N+1</td></tr>
+    <tr><td>Target p95 (ms)</td><td>Page latency SLO. Used when a baseline p95 is set (Advanced): Core / webEngine scale out until the estimated p95 meets it</td></tr>
     <tr><td>DAM cache hit ratio</td><td>CDN / DAM proxy hits for assets. Assets usually cache far better than pages.</td></tr>
     <tr><td>Page cache hit ratio</td><td>Largest lever on Core / webEngine RPS</td></tr>
   </table>
@@ -291,6 +292,15 @@ npm run build     # production bundle → dist/</pre>
     Searches/hit, peak authoring users, uploads/day &amp; avg MB, content items (index GB),
     IQ attach / msgs / tokens in+out, growth CAGR, session footprint KB.
   </p>
+  <table>
+    <tr><th>Input</th><th>Default</th><th>Effect</th></tr>
+    <tr><td>Target CPU / memory / disk util</td><td>0.6 / 0.7 / 0.7</td><td>Headroom: replicas sized so peak util ≤ CPU target; memory and demand-driven storage provisioned to their targets</td></tr>
+    <tr><td>Busy-hour factor</td><td>4</td><td>When peak users is 0 and DAU is set: peak = DAU × session length ÷ day × factor</td></tr>
+    <tr><td>Baseline p95 (ms)</td><td>0 (off)</td><td>Your measured page p95 at low load. Turns on the latency check and the p95 column</td></tr>
+    <tr><td>Avg page / asset KB</td><td>0 / 0 (off)</td><td>Origin response sizes. Turns on the egress cost</td></tr>
+    <tr><td>Auth token overhead (KB)</td><td>0 (off)</td><td>Extra session memory per authenticated user (LTPA / JWT), weighted by % authenticated</td></tr>
+  </table>
+  <p class="mono" style="background:none;padding:0">Inputs that need measurements from your environment default to 0 (off), so the tool never shows numbers based on made-up data.</p>
   <p>
     <strong>Think time (sec).</strong> When above 0, the request rate is <span class="mono">U_peak ÷ think time</span>.
     This is how a Locust virtual user behaves (<span class="mono">wait_time</span>); for <span class="mono">between(1, 3)</span> use 2.
@@ -321,7 +331,9 @@ npm run build     # production bundle → dist/</pre>
   <p>Summary cards show front-door RPS, portal RPS, concurrent sessions, infra $, license $, AI tokens $, total $, and profile confidence.</p>
   <ul>
     <li><strong>Session math</strong> — concurrent sessions, sessions/day, footprint Mi, recommended timeout, sticky-session note for HAProxy.</li>
-    <li><strong>BOM table</strong> — per component: replicas, offered/capacity RPS, util, CPU, mem, storage, infra $, license $.</li>
+    <li><strong>BOM table</strong> — per component: replicas, offered/capacity RPS, util (p50), p90 util, est. p95, CPU, mem, storage, infra $, license $.</li>
+    <li><strong>p90 util</strong> — utilization if capacity is lower than estimated. The range is wider for default profiles (σ 0.25) than for lab-calibrated ones (σ 0.1). Amber text means p90 ≥ 90%.</li>
+    <li><strong>Egress $/mo</strong> — shown once page / asset sizes are entered. Counts origin (cache-miss) traffic only; CDN-served bytes are the CDN's cost.</li>
     <li><strong>Util colors</strong> —
       <span class="band g"></span>green &lt;70% ·
       <span class="band a"></span>amber 70–90% ·
@@ -347,7 +359,7 @@ npm run build     # production bundle → dist/</pre>
     <li>Edge labels show traffic class + RPS; edges animate when RPS &gt; 0.</li>
     <li>Use the <strong>Load</strong> slider (0.1×–5×) to stress the design. At ~3× peak you should see amber/red on hot path nodes.</li>
     <li>Click a node for util, replicas, cost, and notes.</li>
-    <li><strong>Add replica</strong> raises that node’s replica override and recomputes util/cost.</li>
+    <li><strong>Add replica</strong> / <strong>Remove replica</strong> change that node's replica count and recompute util and cost. Remove stops at 1. Going below the availability floor is allowed for what-if testing, but the node and the warnings flag it. The panel shows the recommended count whenever yours differs. Both buttons are disabled for fixed components (sidecars, runtime controller, platform services).</li>
     <li><strong>Enable CDN</strong> restores cache-hit path (uncheck CDN to force miss-through).</li>
     <li><strong>Reset fixes</strong> clears overrides and sets load back to 1×.</li>
   </ol>
@@ -440,17 +452,22 @@ searchRps    = portalRps × searchAttach × searchesPerHit   (if search enabled)
 imageRps     = 0.2 × damRps
 iqRps        = U_peak × iqAttach × msgs / sessionSec       (own traffic class)
 
-replicas     = max( ceil(offeredRps / rpsPerReplica), haMin, azCount, minReplicas )
-util         = offeredRps / (replicas × rpsPerReplica)
+loadRep      = ceil( offeredRps / (rpsPerReplica × targetCpuUtil) )
+minSafe      = max( haMin, azCount, availability min )        (availability ≥ 99.9%)
+replicas     = max( loadRep + availability spare, minSafe )
+util         = offeredRps / (replicas × rpsPerReplica)          p90 = util × e^(1.2816 σ)
 
 Core/webEngine (pod fixed at 5.6 CPU / 8Gi, heap 4Gi):
-  cpuReplicas  = ceil( cpuPerRps × RPS / (5.6 − cpuBase) )
+  cpuReplicas  = ceil( cpuPerRps × RPS / (5.6 × targetCpuUtil − cpuBase) )
   sessionHeap  = U_peak × sessionBytes × 1.3
   heapReplicas = ceil( sessionHeap / (4Gi × 0.5) )
-  replicas     = max( replicas, cpuReplicas, heapReplicas )
+  latencyReps  = smallest c with baselineP95 × (1 + ErlangC(c,a)/(c − a)) ≤ targetP95
+  replicas     = max( replicas, cpuReplicas, heapReplicas, latencyReps )
 
 tokens/mo    = sessions/day × 30 × iqAttach × msgs × (tok_in + tok_out)
-DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
+DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi   (÷ targetDiskUtil)
+egress GB/mo = DAU × 30 × req/session × origin share × response KB / 1024²</pre>
+  <p>Full model, assumption sources and backlog: <span class="mono">docs/SPEC.md</span>.</p>
   <p>Edge labels in the Simulator show the same absolute RPS as the node they point to.</p>
   <p>
     Capacity constants live in <span class="mono">src/profiles/dxcn-cf238.json</span> and
@@ -476,7 +493,9 @@ DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
     <tr><th>Symptom</th><th>Fix</th></tr>
     <tr><td>npm can’t find package.json</td><td>Run from <span class="mono">dx-sizing-tool/</span>, not the repo root</td></tr>
     <tr><td>Remote Search on Compose</td><td>Expected — Compose forces it off; use Search V2</td></tr>
-    <tr><td>Always 2+ Core/webEngine replicas</td><td>HA/AZ floor by design (never recommend 1 for prod)</td></tr>
+    <tr><td>Always 2+ Core/webEngine replicas</td><td>HA/AZ floor by design. For a lab sizing, set target availability below 99.9%.</td></tr>
+    <tr><td>More replicas than earlier versions</td><td>Expected. Replicas are now sized to the 60% CPU target. Set target CPU util to 1 to compare with the old behaviour.</td></tr>
+    <tr><td>No p95 column values / no egress card</td><td>Enter a baseline p95, or page / asset sizes, in Advanced. Both are off by default.</td></tr>
     <tr><td>Huge portal RPS</td><td>Check think time: a value above 0 models load-test users, which send far more requests than real visitors. Otherwise raise the page cache hit ratio or set a peak RPS override.</td></tr>
     <tr><td>Lower RPS than an older version</td><td>Expected. Earlier versions applied load multiplier and growth twice.</td></tr>
     <tr><td>Core / webEngine always exactly 5.6 CPU / 8Gi per pod</td><td>By design (HCL pod shape). Load shows up as more replicas; see the node notes for which limit drove the count.</td></tr>
@@ -492,7 +511,9 @@ DAM storage  ≈ uploads/day × avgMB × 30 × retention / 1024  Gi</pre>
   src/profiles/        # CF-tagged capacity JSON
   src/components/      # Estimator, Simulator, Calibrate, Live panels
   scripts/             # sample Locust measurement JSON
-  docs/user-guide.html # this guide (source)</pre>
+  docs/SPEC.md         # sizing model spec (source of truth)
+  docs/user-guide.html # this guide (source)
+  CLAUDE.md            # contributor / Claude Code guide</pre>
 
   <p class="footer-note">
     HCL DX Sizing / Estimation Tool — User Guide · Estimation aid only, not HCL official documentation ·

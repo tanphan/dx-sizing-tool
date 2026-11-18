@@ -6,6 +6,7 @@ import { normalizeInputs } from "./demand";
 import { HCL_CORE_POD, HCL_TIERS, hclAuthPercents } from "./hclGuidance";
 import { buildHelmHints, helmHintsYaml } from "./helm";
 import { compareEstimateVsLive, parseKubectlTop } from "./liveCompare";
+import { erlangC, utilP90 } from "./policy";
 import { loadProfile } from "./profiles";
 import { runSizing } from "./runSizing";
 import { selectTopology } from "./topology";
@@ -358,5 +359,132 @@ haproxy-0         200m         256Mi`,
     expect(cmp.find((r) => r.componentId === "core")?.status).not.toBe(
       "missing",
     );
+  });
+});
+
+describe("plan gaps: headroom, availability, latency, busy hour, egress, uncertainty", () => {
+  // Compose, no CDN, fixed 480 rps to webEngine (DAM off), no growth.
+  const base = {
+    ...defaultUsageInputs,
+    growthCagr: 0,
+    cacheHitRatio: 0,
+    peakRpsOverride: 480,
+    targetAvailability: "99.9%",
+    azCount: 2,
+  };
+  const run = (inputs: Partial<typeof base>, replicaOverrides?: Record<string, number>) =>
+    runSizing({
+      product: "compose",
+      inputs: { ...base, ...inputs },
+      toggles: defaultToggles("compose"),
+      costs: defaultUnitCosts,
+      replicaOverrides,
+    });
+  const node = (r: ReturnType<typeof run>, id: string) => r.nodes.find((n) => n.id === id)!;
+
+  it("sizes replicas to the target CPU utilization", () => {
+    // webEngine 90 rps/replica: ceil(480 / (90 × 0.6)) = 9; at target 1.0 → ceil(5.33) = 6
+    expect(node(run({ targetCpuUtil: 0.6 }), "webEngine").replicas).toBe(9);
+    expect(node(run({ targetCpuUtil: 1 }), "webEngine").replicas).toBe(6);
+    expect(node(run({ targetCpuUtil: 0.6 }), "webEngine").util).toBeLessThanOrEqual(0.6);
+  });
+
+  it("availability target sets the replica floor and spares", () => {
+    const lab = run({ targetAvailability: "99%", peakRpsOverride: 1 });
+    expect(node(lab, "webEngine").replicas).toBe(1);
+    expect(node(lab, "haproxy").replicas).toBe(1);
+    expect(lab.warnings.some((w) => w.includes("not a production sizing"))).toBe(true);
+
+    expect(node(run({ targetAvailability: "99.95%" }), "webEngine").replicas).toBe(10); // 9 + 1
+    const fourNines = run({ targetAvailability: "99.99%", peakRpsOverride: 1 });
+    expect(node(fourNines, "webEngine").replicas).toBe(3);
+    expect(fourNines.warnings.some((w) => w.includes("3+ AZs"))).toBe(true);
+  });
+
+  it("replica overrides work downward and are clamped and flagged", () => {
+    const r = run({ peakRpsOverride: 10 }, { webEngine: 1, runtimeController: 5 });
+    const we = node(r, "webEngine");
+    expect(we.replicas).toBe(1);
+    expect(we.recommendedReplicas).toBe(2);
+    expect(we.cpuCores).toBeCloseTo(HCL_CORE_POD.cpu, 6);
+    expect(r.warnings.some((w) => w.startsWith("Below availability floor"))).toBe(true);
+    // fixed components ignore overrides
+    expect(node(r, "runtimeController").replicas).toBe(1);
+    // 0 clamps to 1
+    expect(node(run({}, { webEngine: 0 }), "webEngine").replicas).toBe(1);
+  });
+
+  it("Erlang C matches a hand-computed value", () => {
+    // c = 2, a = 1: B = 0.2, C = 0.2 / (1 − 0.5 × 0.8) = 1/3
+    expect(erlangC(2, 1)).toBeCloseTo(1 / 3, 9);
+    expect(erlangC(2, 2)).toBe(1);
+  });
+
+  it("latency check scales Core/webEngine until est. p95 ≤ target", () => {
+    const off = node(run({}), "webEngine");
+    expect(off.p95Ms).toBeUndefined();
+    const on = node(run({ baselineP95Ms: 300, targetP95Ms: 302 }), "webEngine");
+    expect(on.p95Ms!).toBeLessThanOrEqual(302);
+    expect(on.replicas).toBeGreaterThan(off.replicas);
+    const impossible = node(run({ baselineP95Ms: 900, targetP95Ms: 800 }), "webEngine");
+    expect(impossible.notes.some((n) => n.includes("replicas cannot fix this"))).toBe(true);
+  });
+
+  it("derives peak users from DAU × busy-hour factor when peak users is 0", () => {
+    const d = normalizeInputs(
+      { ...defaultUsageInputs, growthCagr: 0, peakConcurrentUsers: 0, dau: 24000, sessionDurationMin: 20, busyHourFactor: 4 },
+      defaultToggles("dxcn"),
+      "dxcn",
+    );
+    // 24000 × 20 / 1440 = 333.3 average × 4
+    expect(d.concurrentSessions).toBeCloseTo(1333.33, 1);
+    expect(d.peakUsersSource).toBe("busyHour");
+  });
+
+  it("estimates origin egress and adds it to total cost", () => {
+    const r = runSizing({
+      product: "dxcn",
+      inputs: { ...defaultUsageInputs, growthCagr: 0, dau: 20000, avgPageKb: 100 },
+      toggles: defaultToggles("dxcn"),
+      costs: defaultUnitCosts,
+    });
+    // 20000 × 30 × 25 req × 0.6 miss × 100 KB = 858.3 GB
+    expect(r.costs.egressGbMonth).toBeCloseTo(858.31, 1);
+    expect(r.costs.egressMonth).toBeCloseTo(858.31 * defaultUnitCosts.egressGb, 1);
+    expect(r.costs.totalMonth).toBeCloseTo(
+      r.costs.infraMonth + r.costs.licenseMonth + r.costs.tokenMonth + r.costs.llmInfraMonth + r.costs.egressMonth,
+      6,
+    );
+    const none = runSizing({ product: "dxcn", inputs: defaultUsageInputs, toggles: defaultToggles("dxcn"), costs: defaultUnitCosts });
+    expect(none.costs.egressMonth).toBe(0);
+  });
+
+  it("adds auth token overhead to session memory for the authenticated share", () => {
+    const d = normalizeInputs(
+      { ...defaultUsageInputs, authTokenKb: 40, pctAuthenticated: 40 },
+      defaultToggles("dxcn"),
+      "dxcn",
+    );
+    expect(d.sessionBytesKbEff).toBeCloseTo(150 + 40 * 0.4, 9);
+  });
+
+  it("p90 utilization is wider for default profiles than lab-calibrated", () => {
+    expect(utilP90(0.5, "default") / 0.5).toBeCloseTo(Math.exp(1.2816 * 0.25), 6);
+    expect(utilP90(0.5, "lab-calibrated")).toBeLessThan(utilP90(0.5, "default"));
+    const we = node(run({}), "webEngine");
+    expect(we.utilP90).toBeGreaterThan(we.util);
+  });
+
+  it("fills fields missing from older saved inputs with defaults", () => {
+    const legacy = { ...defaultUsageInputs } as Partial<typeof defaultUsageInputs>;
+    delete legacy.targetCpuUtil;
+    delete legacy.damCacheHitRatio;
+    const r = runSizing({
+      product: "dxcn",
+      inputs: legacy as typeof defaultUsageInputs,
+      toggles: defaultToggles("dxcn"),
+      costs: defaultUnitCosts,
+    });
+    expect(r.nodes.every((n) => Number.isFinite(n.cpuCores))).toBe(true);
   });
 });

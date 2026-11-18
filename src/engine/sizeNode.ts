@@ -5,6 +5,12 @@ import {
   SESSION_HEAP_FRACTION,
   SESSION_MEM_SAFETY,
 } from "./hclGuidance";
+import {
+  availabilityPolicy,
+  latencyInflation,
+  MAX_LATENCY_REPLICAS,
+  utilP90,
+} from "./policy";
 import type {
   CapacityProfile,
   ComponentId,
@@ -92,6 +98,29 @@ function offeredFor(id: ComponentId, demand: Demand): number {
   }
 }
 
+export interface SizeNodeOptions {
+  /** Logging sidecar: one per Core/webEngine replica */
+  sidecarOfReplicas?: number;
+  /** Manual replica count from the Simulator (up or down); scalable nodes only */
+  forcedReplicas?: number;
+  /** Profile confidence, used for the p90 utilization range */
+  confidence?: CapacityProfile["confidence"];
+}
+
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : hi));
+
+/** Estimated page p95 at peak for the portal runtime (M/M/c approximation). */
+export function portalP95Ms(
+  baselineP95Ms: number,
+  replicas: number,
+  offeredRps: number,
+  rpsPerReplica: number,
+): number {
+  const erlangs = offeredRps / Math.max(1e-9, rpsPerReplica);
+  return baselineP95Ms * latencyInflation(replicas, erlangs);
+}
+
 export function sizeNode(
   id: ComponentId,
   label: string,
@@ -100,18 +129,23 @@ export function sizeNode(
   profile: ComponentProfile | undefined,
   costs: UnitCosts,
   inputs: UsageInputs,
-  sidecarOfReplicas?: number,
+  opts: SizeNodeOptions = {},
 ): SizedNode {
+  const offered = offeredFor(id, demand);
   if (!profile) {
     return {
       id,
       label,
       plane,
-      offeredRps: offeredFor(id, demand),
+      offeredRps: offered,
       capacityRps: 0,
       util: 0,
+      utilP90: 0,
       utilBand: "n/a",
       replicas: 0,
+      recommendedReplicas: 0,
+      minSafeReplicas: 0,
+      scalable: false,
       cpuCores: 0,
       memGi: 0,
       storageGi: 0,
@@ -121,75 +155,131 @@ export function sizeNode(
     };
   }
 
-  const offered = offeredFor(id, demand);
   const notes: string[] = [];
-  let replicas: number;
+  const isPortal = id === "core" || id === "webEngine";
+  const canScale = profile.scalable && !profile.fixed;
+  const avail = availabilityPolicy(inputs.targetAvailability);
+  const targetCpu = clamp(inputs.targetCpuUtil, 0.1, 1);
+  const targetMem = clamp(inputs.targetMemUtil, 0.1, 1);
+  const targetDisk = clamp(inputs.targetDiskUtil, 0.1, 1);
 
+  // ---- 1. Recommended replicas -------------------------------------------
+  let recommended: number;
+  let minSafe: number;
   if (profile.fixed) {
-    replicas =
+    recommended =
       id === "prereqsChecker"
         ? 0
         : id === "loggingSidecar"
-          ? Math.max(1, sidecarOfReplicas ?? 1)
+          ? Math.max(1, opts.sidecarOfReplicas ?? 1)
           : Math.max(profile.minReplicas, 1);
-    if (id === "prereqsChecker") {
-      notes.push("Job-only; ignored in steady-state cost");
-    }
+    minSafe = recommended;
+    if (id === "prereqsChecker") notes.push("Job-only; ignored in steady-state cost");
     if (id === "dxDbSecondary") {
       notes.push("Failover / sync standby — sized ≈ primary storage, partial CPU");
     }
   } else if (!profile.scalable) {
-    replicas = Math.max(profile.minReplicas, 1);
+    recommended = Math.max(profile.minReplicas, 1);
+    minSafe = recommended;
   } else {
-    const loadRep = Math.ceil(offered / Math.max(1, profile.rpsPerReplica));
-    const haRep = Math.max(profile.haMinReplicas, inputs.azCount);
-    replicas = Math.max(loadRep, haRep, profile.minReplicas);
-    if (replicas === haRep && loadRep < haRep) {
-      notes.push("HA / AZ floor applied");
+    // Size so peak util ≤ target (rpsPerReplica is capacity at 100% util).
+    const loadRep =
+      offered > 0
+        ? Math.ceil(offered / Math.max(1e-9, profile.rpsPerReplica * targetCpu))
+        : 0;
+    const withSpare = loadRep > 0 ? loadRep + avail.spare : 0;
+    minSafe = avail.production
+      ? Math.max(profile.haMinReplicas, inputs.azCount, avail.minReplicas, profile.minReplicas)
+      : Math.max(avail.minReplicas, profile.minReplicas);
+    recommended = Math.max(withSpare, minSafe);
+    if (withSpare < minSafe) {
+      notes.push(`Availability floor applied (${inputs.targetAvailability}: ≥${minSafe})`);
+    } else if (avail.spare > 0) {
+      notes.push(`N+${avail.spare} spare for ${inputs.targetAvailability}`);
+    }
+    if (!avail.production) {
+      notes.push("Non-production availability target: single replica allowed");
     }
   }
 
-  const perRepRps = offered / Math.max(1, replicas);
-  let cpuCores =
-    replicas * (profile.cpuBase + profile.cpuPerRps * perRepRps);
-
-  let memGi =
-    replicas *
-    (profile.memBaseGi +
-      (profile.memPerRpsMi * perRepRps) / 1024 +
-      (profile.memPerSessionMi * demand.concurrentSessions) /
-        1024 /
-        Math.max(1, replicas));
-
-  if (id === "core" || id === "webEngine") {
-    // Fixed HCL pod shape (req = limit). Scale OUT when CPU demand or session
-    // heap would exceed one pod, instead of growing the pod past the guidance.
-    const pod = HCL_CORE_POD;
-    const cpuHeadroom = Math.max(0.1, pod.cpu - profile.cpuBase);
-    const cpuRep = Math.ceil((profile.cpuPerRps * offered) / cpuHeadroom);
-    const sessionMemGi =
-      (demand.concurrentSessions * inputs.sessionBytesKb * SESSION_MEM_SAFETY) /
-      1024 /
-      1024;
+  // Portal runtime: fixed HCL pod; scale out for CPU budget, session heap, latency.
+  const pod = HCL_CORE_POD;
+  const sessionMemGi =
+    (demand.concurrentSessions * demand.sessionBytesKbEff * SESSION_MEM_SAFETY) /
+    1024 /
+    1024;
+  if (isPortal) {
+    const cpuBudget = Math.max(0.1, pod.cpu * targetCpu - profile.cpuBase);
+    const cpuRep = Math.ceil((profile.cpuPerRps * offered) / cpuBudget);
     const heapBudgetGi = pod.heapGi * SESSION_HEAP_FRACTION;
     const heapRep = Math.ceil(sessionMemGi / heapBudgetGi);
-    const before = replicas;
-    replicas = Math.max(replicas, cpuRep, heapRep);
-    if (replicas > before) {
+    let rec = Math.max(recommended, cpuRep, heapRep);
+    if (rec > recommended) {
       notes.push(
-        replicas === heapRep
-          ? `Scaled to ${replicas} replicas: session heap ${sessionMemGi.toFixed(1)}Gi > ${heapBudgetGi}Gi/pod budget`
-          : `Scaled to ${replicas} replicas: CPU demand exceeds ${pod.cpu} CPU/pod`,
+        rec === heapRep
+          ? `Scaled to ${rec}: session heap ${sessionMemGi.toFixed(1)}Gi > ${heapBudgetGi}Gi/pod budget`
+          : `Scaled to ${rec}: CPU above ${Math.round(targetCpu * 100)}% of ${pod.cpu} CPU/pod`,
       );
     }
+    if (inputs.baselineP95Ms > 0 && inputs.targetP95Ms > 0) {
+      if (inputs.baselineP95Ms >= inputs.targetP95Ms) {
+        notes.push(
+          `Baseline p95 ${inputs.baselineP95Ms}ms already ≥ target ${inputs.targetP95Ms}ms — replicas cannot fix this`,
+        );
+      } else {
+        let r = Math.max(1, rec);
+        while (
+          r < MAX_LATENCY_REPLICAS &&
+          portalP95Ms(inputs.baselineP95Ms, r, offered, profile.rpsPerReplica) >
+            inputs.targetP95Ms
+        ) {
+          r++;
+        }
+        if (r > rec) notes.push(`Scaled to ${r}: keeps est. p95 ≤ ${inputs.targetP95Ms}ms`);
+        rec = Math.max(rec, r);
+      }
+    }
+    recommended = rec;
+  }
+
+  // ---- 2. Apply manual override (Simulator add / remove) -----------------
+  const forced =
+    canScale && opts.forcedReplicas != null
+      ? Math.max(1, Math.round(opts.forcedReplicas))
+      : undefined;
+  const replicas = forced ?? recommended;
+  if (forced != null && forced !== recommended) {
+    notes.push(`Manual override → ${forced} (recommended ${recommended})`);
+  }
+  if (canScale && replicas < minSafe) {
+    notes.push(`Below the ${inputs.targetAvailability} availability floor of ${minSafe}`);
+  }
+
+  // ---- 3. Resources -------------------------------------------------------
+  const perRepRps = offered / Math.max(1, replicas);
+  let cpuCores = replicas * (profile.cpuBase + profile.cpuPerRps * perRepRps);
+  let memGi =
+    (replicas * (profile.memBaseGi + (profile.memPerRpsMi * perRepRps) / 1024) +
+      (profile.memPerSessionMi * demand.concurrentSessions) / 1024) /
+    targetMem;
+
+  let p95Ms: number | undefined;
+  if (isPortal) {
     cpuCores = replicas * pod.cpu;
     memGi = replicas * pod.podMemoryGi;
-    const cpuUsed =
-      replicas * profile.cpuBase + profile.cpuPerRps * offered;
+    const cpuUsed = replicas * profile.cpuBase + profile.cpuPerRps * offered;
     notes.push(pod.note);
     notes.push(
       `Est. CPU used ${(cpuUsed / replicas).toFixed(2)} of ${pod.cpu}/pod; session heap ${(sessionMemGi / replicas).toFixed(2)}Gi of ${pod.heapGi}Gi heap/pod (≤${Math.round(SESSION_HEAP_FRACTION * 100)}% budget, incl ${Math.round((SESSION_MEM_SAFETY - 1) * 100)}% safety)`,
     );
+    if (inputs.baselineP95Ms > 0) {
+      p95Ms = portalP95Ms(inputs.baselineP95Ms, replicas, offered, profile.rpsPerReplica);
+      notes.push(
+        Number.isFinite(p95Ms)
+          ? `Est. p95 at peak ${Math.round(p95Ms)}ms (baseline ${inputs.baselineP95Ms}ms, M/M/c)`
+          : "Est. p95 unbounded — offered load exceeds capacity",
+      );
+    }
     notes.push(`Ref: ${HCL_SIZING_DOC}`);
   }
 
@@ -198,32 +288,30 @@ export function sizeNode(
     memGi = Math.max(memGi, 8);
   }
 
-  let storageGi = replicas * profile.storageBaseGi;
-  if (id === "dam") storageGi += demand.damStorageGiMonth;
-  if (id === "openSearch" || id === "remoteSearch") {
-    storageGi += demand.searchIndexGi;
-  }
+  // Storage: fixed base + demand-driven growth provisioned to the disk target.
+  const baseStorageGi = replicas * profile.storageBaseGi;
+  let demandStorageGi = 0;
+  if (id === "dam" || id === "objectStorage") demandStorageGi += demand.damStorageGiMonth;
+  if (id === "openSearch" || id === "remoteSearch") demandStorageGi += demand.searchIndexGi;
   if (id === "externalDb" || id === "dxDbSecondary") {
-    storageGi += Math.max(50, demand.searchIndexGi * 0.5);
+    demandStorageGi += Math.max(50, demand.searchIndexGi * 0.5);
   }
+  if (id === "backupDr") {
+    demandStorageGi += demand.rwxStorageGi * 0.5 + demand.damStorageGiMonth;
+  }
+  let storageGi = baseStorageGi + demandStorageGi / targetDisk;
   if (id === "rwxStorage") {
-    storageGi = Math.max(storageGi, demand.rwxStorageGi);
+    storageGi = Math.max(baseStorageGi, demand.rwxStorageGi / targetDisk);
     notes.push(
       "DXCN Core requires RWX; Compose webEngine does not — DAM adds RWX when enabled",
     );
   }
-  if (id === "objectStorage") {
-    storageGi += demand.damStorageGiMonth;
-  }
-  if (id === "backupDr") {
-    storageGi += demand.rwxStorageGi * 0.5 + demand.damStorageGiMonth;
-  }
 
+  // ---- 4. Utilization, cost ----------------------------------------------
   const capacityRps = replicas * profile.rpsPerReplica;
   const util =
-    profile.fixed || capacityRps <= 0 || offered === 0
-      ? 0
-      : offered / capacityRps;
+    profile.fixed || capacityRps <= 0 || offered === 0 ? 0 : offered / capacityRps;
+  const p90 = utilP90(util, opts.confidence ?? "default");
 
   const infraCostMonth =
     cpuCores * HOURS_PER_MONTH * costs.vcpuPerHour +
@@ -231,12 +319,13 @@ export function sizeNode(
     storageGi * costs.storageGiBPerMonth;
 
   const licenseCostMonth =
-    profile.licenseNode && replicas > 0
-      ? replicas * costs.dxLicensePerNodeMonth
-      : 0;
+    profile.licenseNode && replicas > 0 ? replicas * costs.dxLicensePerNodeMonth : 0;
 
   if (util >= 0.9) notes.push("Saturated at peak — add replicas or reduce RPS");
   else if (util >= 0.7) notes.push("High utilization — limited headroom");
+  else if (p90 >= 0.9 && !profile.fixed) {
+    notes.push(`p90 util ${(p90 * 100).toFixed(0)}% — could saturate if capacity is below estimate`);
+  }
 
   return {
     id,
@@ -245,8 +334,13 @@ export function sizeNode(
     offeredRps: offered,
     capacityRps,
     util,
+    utilP90: profile.fixed || offered === 0 ? 0 : p90,
     utilBand: utilBand(util, profile.fixed || offered === 0),
     replicas,
+    recommendedReplicas: recommended,
+    minSafeReplicas: minSafe,
+    scalable: canScale,
+    p95Ms,
     cpuCores,
     memGi,
     storageGi,

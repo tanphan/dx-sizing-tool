@@ -101,6 +101,25 @@ export interface UsageInputs {
   sessionBytesKb: number;
   /** Include cloud-native platform plane (WAF, LB, DB HA, …) */
   productionPlatform: boolean;
+
+  // --- Headroom targets (plan defaults: CPU 0.6, memory 0.7, disk 0.7) ---
+  /** Size scalable replicas so utilization at peak ≤ this (0–1) */
+  targetCpuUtil: number;
+  /** Provision memory so working set ≤ this share (non Core/webEngine) */
+  targetMemUtil: number;
+  /** Provision demand-driven storage so it is ≤ this share full */
+  targetDiskUtil: number;
+
+  /** Peak ÷ average multiplier used when only DAU is given (peak users = 0) */
+  busyHourFactor: number;
+  /** Measured Core/webEngine page p95 at low load (ms). 0 = latency check off */
+  baselineP95Ms: number;
+  /** Avg origin response size for pages (KB). 0 = egress not estimated */
+  avgPageKb: number;
+  /** Avg origin response size for DAM assets (KB). 0 = egress not estimated */
+  avgAssetKb: number;
+  /** Extra per-session memory for authenticated users (LTPA/JWT subject, KB) */
+  authTokenKb: number;
 }
 
 export interface UnitCosts {
@@ -200,6 +219,14 @@ export interface Demand {
   authorRps: number;
   ringRps: number;
   concurrentSessions: number;
+  /** "input" = peak users given; "busyHour" = derived from DAU × busy-hour factor */
+  peakUsersSource: "input" | "busyHour";
+  /** Share of front-door requests that are DAM assets */
+  damShare: number;
+  /** Session bytes incl. auth token overhead weighted by % authenticated */
+  sessionBytesKbEff: number;
+  /** Origin → internet egress per month (GB); 0 when response sizes not set */
+  egressGbMonth: number;
   sessionsPerDay: number;
   damStorageGiMonth: number;
   searchIndexGi: number;
@@ -214,9 +241,20 @@ export interface SizedNode {
   plane: ComponentPlane;
   offeredRps: number;
   capacityRps: number;
+  /** p50 utilization (point estimate) */
   util: number;
+  /** p90 utilization given profile uncertainty (default vs lab-calibrated) */
+  utilP90: number;
   utilBand: "green" | "amber" | "red" | "n/a";
   replicas: number;
+  /** Replicas the engine recommends (differs from `replicas` when overridden) */
+  recommendedReplicas: number;
+  /** Lowest replica count the HA / availability policy allows */
+  minSafeReplicas: number;
+  /** Whether the UI may add/remove replicas for this component */
+  scalable: boolean;
+  /** Estimated page p95 at peak (Core/webEngine, when baseline p95 is set) */
+  p95Ms?: number;
   cpuCores: number;
   memGi: number;
   storageGi: number;
@@ -243,6 +281,8 @@ export interface CostTotals {
   licenseMonth: number;
   tokenMonth: number;
   llmInfraMonth: number;
+  egressMonth: number;
+  egressGbMonth: number;
   totalMonth: number;
   vcpuHours: number;
   memGiBHours: number;
